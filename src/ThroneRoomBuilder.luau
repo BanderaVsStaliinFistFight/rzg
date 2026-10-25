@@ -165,6 +165,7 @@ local C = {
 	bush = RGB(70, 140, 76),
 	bushDark = RGB(40, 98, 56),
 	gold = RGB(222, 172, 58),
+	goldDeep = RGB(186, 136, 46),
 	purple = RGB(104, 60, 150),
 	purpleDeep = RGB(72, 40, 108),
 	lavender = RGB(148, 106, 198),
@@ -1459,94 +1460,280 @@ local function buildAsgoreThrone(parent)
 	local function P(x, y, z)
 		return base * V3(x, y, z)
 	end
-	local function tb(x, y, z, sx, sy, sz, color, mat, props)
-		return part(m, base * CF(x, y, z), V3(sx, sy, sz), color, mat, props)
-	end
-	local G, GM = C.gold, M.Metal
-	local GOLD_P = { CastShadow = true, Reflectance = 0.06 }
-	local GOLD_S = merge(SOLID, { Reflectance = 0.06 })
+	local G, GD, GM = C.gold, C.goldDeep, M.Metal
+	local GOLD_P = { CastShadow = true, Reflectance = 0.08 } -- polished highlights
+	local GOLD_S = merge(SOLID, { Reflectance = 0.05 }) -- the gilded frame itself
+	local VELVET = M.Fabric
 
-	-- legs and the posts of the backrest
+	-- A round molding: cylinders through room-space points, with balls at the bends.
+	local function bead(pts, d, color, props)
+		for i = 1, #pts - 1 do
+			cylBetween(m, pts[i], pts[i + 1], d, color or G, GM, props or GOLD_P)
+		end
+		for i = 2, #pts - 1 do
+			ball(m, pts[i], d, color or G, GM, props or GOLD_P)
+		end
+	end
+	-- A carved leaf or shell rib: a gilded ellipsoid.
+	local function carving(cf, size)
+		local p = part(m, cf, size, G, GM, GOLD_P)
+		local mesh = Instance.new("SpecialMesh")
+		mesh.MeshType = Enum.MeshType.Sphere
+		mesh.Parent = p
+	end
+	-- A flat spiral (a carved volute) in the XY plane of `pf`.
+	local function volute(pf, r0, r1, turns, start, d)
+		local pts = {}
+		local n = floor(turns * 9)
+		for i = 0, n do
+			local t = i / n
+			local a = start + t * turns * TAU
+			local r = r0 + (r1 - r0) * t
+			table.insert(pts, pf * V3(cos(a) * r, sin(a) * r, 0))
+		end
+		bead(pts, d)
+	end
+	-- A turned part on a vertical axis: { y0, y1, diameter } from the bottom up.
+	local function turned(cf, profile, color, props)
+		for _, s in profile do
+			part(m, cf * CF(0, (s[1] + s[2]) / 2, 0) * ANG(0, 0, PI / 2), V3(s[2] - s[1], s[3], s[3]), color, GM, merge(props, CYL_P))
+		end
+	end
+
+	-- legs: turned, on bun feet, each under a square die with a rosette
+	local LEG = { { 0, 0.25, 1.55 }, { 1.42, 1.62, 1.15 }, { 1.62, 2.05, 0.85 }, { 2.05, 2.45, 0.72 }, { 2.45, 2.62, 1.02 }, { 2.62, 2.95, 1.22 } }
 	for _, sx in { -1, 1 } do
-		for _, lz in { -3.9, 3.9 } do
-			ball(m, P(sx * 5.55, 0.75, lz), 1.6, G, GM, GOLD_P)
-		end
-		cylBetween(m, P(sx * 5.55, 0.9, 3.9), P(sx * 5.55, 3.1, 3.9), 1.1, G, GM, GOLD_S)
-		disc(m, base * CF(sx * 5.55, 2.0, 3.9), 1.5, 0.35, C.gold, GM, GOLD_P)
-		tb(sx * 5.6, 8.6, -3.9, 1.3, 15.8, 1.3, G, GM, GOLD_S)
-		ball(m, P(sx * 5.6, 17.1, -3.9), 1.8, G, GM, GOLD_P)
-	end
-	-- seat
-	tb(0, 3.65, 0.2, 12.2, 1.5, 9.2, G, GM, GOLD_S)
-	for i = -3, 3 do -- scalloped apron
-		plate(m, base * CF(i * 1.55, 2.9, 4.62), 1.3, 0.35, G, GM, GOLD_P)
-	end
-	plate(m, base * CF(0, 3.65, 4.86), 1.9, 0.2, G, GM, GOLD_P)
-	plate(m, base * CF(0, 3.65, 4.98), 1.35, 0.12, C.purple, M.Fabric, {})
-	tb(0, 5.15, 0.3, 11.2, 1.5, 8.6, C.lavender, M.Fabric, SOLID)
-	cylBetween(m, P(-5.6, 5.1, 4.55), P(5.6, 5.1, 4.55), 1.6, C.lavender, M.Fabric, SHADOW)
-
-	-- backrest: deep purple, tufted, under a golden arch and crown
-	tb(0, 11.2, -3.75, 10, 10.6, 0.9, C.purpleDeep, M.Fabric, SOLID)
-	plate(m, base * CF(0, 16.5, -3.85), 10.4, 0.8, C.purpleDeep, M.Fabric, SHADOW)
-	local arc = {}
-	for i = 0, 14 do
-		local t = i / 14 * PI
-		table.insert(arc, { cos(t) * 5.6, 16.5 + sin(t) * 5.6 })
-	end
-	polyline(m, base * CF(0, 0, -3.85), arc, 1.1, 1.4, G, GM, GOLD_P)
-	tb(0, 6.2, -3.6, 10.4, 0.7, 1.2, G, GM, GOLD_P)
-	tb(0, 11.2, -4.35, 10.2, 10.6, 0.3, G, GM, GOLD_P) -- the back of the backrest
-	plate(m, base * CF(0, 16.5, -4.35), 10.6, 0.3, G, GM, GOLD_P)
-
-	for row = 0, 2 do -- tufting: buttons with quilted puffs between them
-		local y = 7.3 + row * 1.85
-		for col = -2, 2 do
-			local x = col * 2.0 + (row % 2) * 1.0
-			if abs(x) < 4.3 then
-				ball(m, P(x, y, -3.22), 0.38, G, GM, {})
-			end
-			local px, py = x + 1.0, y + 0.92
-			if abs(px) < 4.0 and py < 11.6 then -- a velvet dome, mostly sunk into the panel
-				ball(m, P(px, py, -3.75), 1.4, C.purple, M.Fabric, {})
+		for _, z in { 4.42, -3.8 } do
+			local x = sx * 5.4
+			turned(base * CF(x, 0, z), LEG, G, GOLD_S)
+			ball(m, P(x, 0.85, z), 1.4, G, GM, GOLD_S)
+			part(m, base * CF(x, 3.62, z), V3(1.4, 1.35, 1.4), GD, GM, GOLD_S)
+			for _, face in { V3(0, 0, if z > 0 then 1 else -1), V3(sx, 0, 0) } do
+				local c = V3(x, 3.62, z) + face * 0.7
+				plate(m, base * CFrame.lookAt(c, c + face), 0.85, 0.12, G, GM, GOLD_P)
+				ball(m, P(c.X, c.Y, c.Z) + base:VectorToWorldSpace(face * 0.08), 0.36, G, GM, GOLD_P)
 			end
 		end
 	end
-	-- a small golden Delta Rune on the backrest
-	local ez = -3.22
-	plate(m, base * CF(0, 14.8, ez), 1.5, 0.14, G, GM, {})
+
+	-- seat rails between the dies, beaded along both edges
+	for _, r in {
+		{ V3(-4.7, 3.62, 4.42), V3(4.7, 3.62, 4.42), V3(0, 0, 1) },
+		{ V3(-4.7, 3.62, -3.8), V3(4.7, 3.62, -3.8), V3(0, 0, -1) },
+		{ V3(-5.4, 3.62, -3.1), V3(-5.4, 3.62, 3.72), V3(-1, 0, 0) },
+		{ V3(5.4, 3.62, -3.1), V3(5.4, 3.62, 3.72), V3(1, 0, 0) },
+	} do
+		local a, b, out = r[1], r[2], r[3]
+		part(m, base * frameX((a + b) / 2, b - a), V3((b - a).Magnitude, 1.25, 0.85), GD, GM, GOLD_S)
+		for _, dy in { 0.55, -0.55 } do
+			local o = out * 0.43 + V3(0, dy, 0)
+			bead({ P(a.X + o.X, a.Y + o.Y, a.Z + o.Z), P(b.X + o.X, b.Y + o.Y, b.Z + o.Z) }, 0.3)
+		end
+	end
+	-- a carved shell hanging from the front rail, between two scrolls, under a medallion
+	local shell = V3(0, 3.1, 4.75)
+	for i = -3, 3 do
+		local a = i * 0.36
+		local len = 1.75 - abs(i) * 0.15
+		local mid = shell + V3(sin(a), -cos(a), 0) * (len / 2)
+		carving(base * CF(mid) * ANG(0, 0, a), V3(0.42, len, 0.32))
+	end
+	ball(m, P(shell.X, shell.Y, shell.Z + 0.05), 0.5, G, GM, GOLD_P)
+	for _, sx in { -1, 1 } do
+		volute(base * CF(sx * 1.85, 2.75, 4.85) * ANG(0, if sx < 0 then PI else 0, 0), 0.7, 0.18, 1.25, PI * 0.5, 0.2)
+	end
+	plate(m, base * CF(0, 3.62, 4.9), 1.15, 0.12, G, GM, GOLD_P)
+	plate(m, base * CF(0, 3.62, 4.97), 0.72, 0.1, C.purple, VELVET, {})
+
+	-- the seat: a velvet cushion with rounded edges, gold piping and nailheads
+	local cx, cz0, cz1, y0, y1, r = 5.2, -3.75, 4.5, 4.3, 5.95, 0.42
+	part(m, base * CF(0, (y0 + y1 - r) / 2, (cz0 + cz1) / 2), V3(2 * cx, y1 - r - y0, cz1 - cz0), C.lavender, VELVET, SOLID)
+	part(m, base * CF(0, y1 - r / 2, (cz0 + cz1 - r) / 2), V3(2 * (cx - r), r, cz1 - cz0 - r), C.lavender, VELVET, SOLID)
+	cylBetween(m, P(-cx + r, y1 - r, cz1 - r), P(cx - r, y1 - r, cz1 - r), 2 * r, C.lavender, VELVET, SHADOW)
+	for _, sx in { -1, 1 } do
+		cylBetween(m, P(sx * (cx - r), y1 - r, cz0), P(sx * (cx - r), y1 - r, cz1 - r), 2 * r, C.lavender, VELVET, SHADOW)
+		ball(m, P(sx * (cx - r), y1 - r, cz1 - r), 2 * r, C.lavender, VELVET, SHADOW)
+	end
+	local k, q = r * 0.71, r * 0.58
+	local ex, ey, ez = cx - r, y1 - r, cz1 - r -- the axes of the rounded edges
+	bead({
+		P(-ex - k, ey + k, cz0 + 0.2),
+		P(-ex - k, ey + k, ez),
+		P(-ex - q, ey + q, ez + q),
+		P(-ex, ey + k, ez + k),
+		P(ex, ey + k, ez + k),
+		P(ex + q, ey + q, ez + q),
+		P(ex + k, ey + k, ez),
+		P(ex + k, ey + k, cz0 + 0.2),
+	}, 0.14)
+	for x = -cx + 0.35, cx - 0.3, 0.42 do
+		ball(m, P(x, y0 + 0.22, cz1 + 0.02), 0.2, G, GM, {})
+	end
+	for _, sx in { -1, 1 } do
+		for z = cz0 + 0.5, cz1 - 0.3, 0.42 do
+			ball(m, P(sx * (cx + 0.02), y0 + 0.22, z), 0.2, G, GM, {})
+		end
+	end
+
+	-- the back, leaning back 10 degrees: gilded stiles and an arched crest rail framing
+	-- buttoned velvet. B/BC place things in the back's own frame (x across, v up, w out).
+	local BF = base * CF(0, 4.3, -3.8) * ANG(rad(-10), 0, 0)
+	local function B(x, v, w)
+		return BF * V3(x, v, w)
+	end
+	local function BC(x, v, w)
+		return BF * CF(x, v, w)
+	end
+	local SX, TOP, APEX = 5.45, 13.5, 17.6
+	local ac = (APEX ^ 2 - TOP ^ 2 - SX ^ 2) / (2 * (APEX - TOP)) -- the arch's centre
+	local AR = APEX - ac
+	local function arch(radius, xLimit, n)
+		local a0, a1 = acos(-xLimit / radius), acos(xLimit / radius)
+		local pts = {}
+		for i = 0, n do
+			local a = a0 + (a1 - a0) * i / n
+			table.insert(pts, { cos(a) * radius, ac + sin(a) * radius })
+		end
+		return pts
+	end
+	for _, sx in { -1, 1 } do
+		part(m, BC(sx * SX, TOP / 2, 0), V3(1.2, TOP, 1.25), GD, GM, GOLD_S)
+		for _, dx in { -0.28, 0.28 } do -- reeding down the face of the stile
+			cylBetween(m, B(sx * SX + dx, 0.4, 0.64), B(sx * SX + dx, TOP - 0.3, 0.64), 0.22, G, GM, GOLD_P)
+		end
+		-- an urn finial on each stile
+		local fv = TOP + 0.45
+		turned(BC(sx * SX, fv, 0), { { 0, 0.3, 1.5 }, { 1.45, 1.6, 0.7 }, { 2.2, 2.7, 0.16 } }, G, GOLD_P)
+		ball(m, B(sx * SX, fv + 0.9, 0), 1.15, G, GM, GOLD_P)
+		ball(m, B(sx * SX, fv + 1.95, 0), 0.6, G, GM, GOLD_P)
+		ball(m, B(sx * SX, fv + 2.75, 0), 0.28, G, GM, GOLD_P)
+	end
+	part(m, BC(0, 0.4, 0), V3(2 * SX, 0.8, 1.25), GD, GM, GOLD_S)
+	polyline(m, BF, arch(AR, SX, 16), 1.1, 1.25, GD, GM, GOLD_S, 0)
+	local outer = {}
+	for i, q2 in arch(AR + 0.55, SX + 0.3, 18) do
+		outer[i] = B(q2[1], q2[2], 0.3)
+	end
+	bead(outer, 0.34)
+
+	-- the velvet: a deep purple panel (with the arch filled in slices) and a raised,
+	-- buttoned centre with pleats running between the buttons
+	part(m, BC(0, (0.8 + TOP) / 2, -0.3), V3(2 * SX - 1.1, TOP - 0.8, 0.9), C.purpleDeep, VELVET, SOLID)
+	local inR = AR - 0.5
+	local v = TOP
+	while v < ac + inR - 0.05 do
+		local v1 = min(v + 0.35, ac + inR)
+		local hw = sqrt(max(0, inR * inR - (v1 - ac) ^ 2))
+		part(m, BC(0, (v + v1) / 2, -0.3), V3(2 * max(0.05, hw), v1 - v, 0.9), C.purpleDeep, VELVET, {})
+		v = v1
+	end
+	part(m, BC(0, 7.0, 0.3), V3(8.6, 11.6, 0.3), C.purple, VELVET, SHADOW)
+	local normal = BF:VectorToWorldSpace(V3(0, 0, 1))
+	local buttons = {}
+	for row = 0, 7 do
+		for col = -3, 3 do
+			local x = col * 1.7 + (row % 2) * 0.85
+			if abs(x) <= 3.6 then
+				local bv = 1.9 + row * 1.45
+				buttons[row .. ":" .. col] = { x, bv }
+				ball(m, B(x, bv, 0.5), 0.3, G, GM, {})
+				local px, pv = x + 0.85, bv + 0.725
+				if abs(px) <= 3.4 and row < 7 then
+					ball(m, B(px, pv, 0.0), 1.45, C.purple, VELVET, {})
+				end
+			end
+		end
+	end
+	for row = 0, 6 do -- pleats from each button to the ones diagonally above it
+		for col = -3, 3 do
+			local b0 = buttons[row .. ":" .. col]
+			if b0 then
+				for _, dc in { 0, if row % 2 == 0 then -1 else 1 } do
+					local b1 = buttons[(row + 1) .. ":" .. (col + dc)]
+					if b1 then
+						local a, b = B(b0[1], b0[2], 0.47), B(b1[1], b1[2], 0.47)
+						part(m, frameX((a + b) / 2, b - a, normal), V3((b - a).Magnitude, 0.06, 0.09), shade(C.purple, 0.62), VELVET, {})
+					end
+				end
+			end
+		end
+	end
+	-- gilded beads round the velvet
+	local inner = { B(-4.72, 0.85, 0.6) }
+	for _, q2 in arch(AR - 0.62, 4.72, 14) do
+		table.insert(inner, B(q2[1], q2[2], 0.6))
+	end
+	table.insert(inner, B(4.72, 0.85, 0.6))
+	table.insert(inner, B(-4.72, 0.85, 0.6))
+	bead(inner, 0.3)
+
+	-- a small golden Delta Rune in the arch
+	local ew, ev = 0.22, ac + 2.7
+	plate(m, BC(0, ev + 0.35, ew), 1.5, 0.14, G, GM, GOLD_P)
 	for _, side in { -1, 1 } do
-		triangle(m, P(side * 0.7, 15.15, ez), P(side * 0.75, 14.55, ez), P(side * 2.6, 15.35, ez), G, GM, 0.14, {})
-		triangle(m, P(side * 0.7, 14.5, ez), P(side * 0.45, 14.15, ez), P(side * 2.2, 13.9, ez), G, GM, 0.14, {})
+		triangle(m, B(side * 0.7, ev + 0.7, ew), B(side * 0.75, ev + 0.1, ew), B(side * 2.6, ev + 0.9, ew), G, GM, 0.14, {})
+		triangle(m, B(side * 0.7, ev + 0.05, ew), B(side * 0.45, ev - 0.3, ew), B(side * 2.2, ev - 0.55, ew), G, GM, 0.14, {})
 	end
 	local ts, th = 1.1, 1.1 * 0.866
-	for _, cx in { -0.72, 0.72 } do
-		triangle(m, P(cx - ts / 2, 12.9, ez), P(cx + ts / 2, 12.9, ez), P(cx, 12.9 + th, ez), G, GM, 0.14, {})
+	for _, tx in { -0.72, 0.72 } do
+		triangle(m, B(tx - ts / 2, ev - 1.55, ew), B(tx + ts / 2, ev - 1.55, ew), B(tx, ev - 1.55 + th, ew), G, GM, 0.14, {})
 	end
-	triangle(m, P(-ts / 2, 12.65, ez), P(ts / 2, 12.65, ez), P(0, 12.65 - th, ez), G, GM, 0.14, {})
+	triangle(m, B(-ts / 2, ev - 1.8, ew), B(ts / 2, ev - 1.8, ew), B(0, ev - 1.8 - th, ew), G, GM, 0.14, {})
 
-	-- crown on top
-	tb(0, 22.9, -3.85, 4.4, 1.1, 1.2, G, GM, GOLD_P)
-	local cz = -3.85
-	local points = {
-		{ { -2.2, 23.4 }, { -0.9, 23.4 }, { -1.75, 25.3 } },
-		{ { -0.8, 23.4 }, { 0.8, 23.4 }, { 0, 26.1 } },
-		{ { 0.9, 23.4 }, { 2.2, 23.4 }, { 1.75, 25.3 } },
-	}
-	for _, p in points do
-		triangle(m, P(p[1][1], p[1][2], cz), P(p[2][1], p[2][2], cz), P(p[3][1], p[3][2], cz), G, GM, 0.7, GOLD_P)
-		ball(m, P(p[3][1], p[3][2], cz), 0.6, G, GM, {})
+	-- the crown on the crest, with acanthus leaves and scrolls running down the arch
+	local cv = APEX + 0.95
+	part(m, BC(0, cv, 0), V3(4.6, 1.0, 1.0), GD, GM, GOLD_P)
+	bead({ B(-2.3, cv - 0.5, 0.5), B(2.3, cv - 0.5, 0.5) }, 0.2)
+	bead({ B(-2.3, cv + 0.5, 0.5), B(2.3, cv + 0.5, 0.5) }, 0.2)
+	for _, pt in {
+		{ { -2.25, cv + 0.5 }, { -0.95, cv + 0.5 }, { -1.75, cv + 2.4 } },
+		{ { -0.8, cv + 0.5 }, { 0.8, cv + 0.5 }, { 0, cv + 3.2 } },
+		{ { 0.95, cv + 0.5 }, { 2.25, cv + 0.5 }, { 1.75, cv + 2.4 } },
+	} do
+		triangle(m, B(pt[1][1], pt[1][2], 0), B(pt[2][1], pt[2][2], 0), B(pt[3][1], pt[3][2], 0), G, GM, 0.7, GOLD_P)
+		ball(m, B(pt[3][1], pt[3][2], 0), 0.6, G, GM, GOLD_P)
 	end
-	ball(m, P(0, 22.9, -3.2), 0.6, C.lavender, M.Glass, {})
-
-	-- armrests
+	for i, gx in { -1.4, 0, 1.4 } do
+		ball(m, B(gx, cv, 0.5), 0.5, if i == 2 then C.lavender else C.purple, M.Glass, {})
+	end
 	for _, sx in { -1, 1 } do
-		tb(sx * 5.75, 8.7, 0.15, 1.1, 0.9, 8.3, G, GM, GOLD_S)
-		tb(sx * 5.75, 9.35, 0.4, 1.3, 0.45, 6.6, C.lavender, M.Fabric, SHADOW)
-		cylBetween(m, P(sx * 5.75, 5.9, 3.95), P(sx * 5.75, 8.3, 3.95), 1.0, G, GM, GOLD_P)
-		part(m, base * CF(sx * 5.75, 8.7, 4.4), V3(1.3, 1.5, 1.5), G, GM, merge(GOLD_P, CYL_P))
-		part(m, base * CF(sx * 6.42, 8.7, 4.4), V3(0.12, 0.9, 0.9), C.purple, M.Fabric, CYL_P)
-		tb(sx * 5.85, 7.1, 0.1, 0.35, 2.4, 7.4, C.purpleDeep, M.Fabric, SHADOW)
+		volute(BC(sx * 3.2, cv - 0.6, 0.2) * ANG(0, if sx < 0 then PI else 0, 0), 0.85, 0.2, 1.2, PI * 0.6, 0.28)
+		for _, t in { 0.32, 0.5, 0.68 } do -- leaves along the shoulders of the arch
+			local a = acos(-SX / AR) + (PI / 2 - acos(-SX / AR)) * t
+			if sx > 0 then
+				a = PI - a
+			end
+			local pos = BC(cos(a) * (AR + 0.65), ac + sin(a) * (AR + 0.65), 0.15)
+			carving(pos * ANG(0, 0, a - PI / 2 + sx * 0.35), V3(0.55, 1.45, 0.32))
+		end
+	end
+
+	-- open arms: a gilded rail with a velvet pad, carried on an S-curved support that rises
+	-- from the front leg and ends in a scroll
+	for _, sx in { -1, 1 } do
+		local x = sx * 5.75
+		local back, front = V3(x, 8.75, -4.2), V3(x, 8.45, 4.0)
+		local dir = front - back
+		part(m, base * frameX((back + front) / 2, dir), V3(dir.Magnitude, 0.6, 0.95), GD, GM, GOLD_S)
+		local function railAt(z, lift)
+			local t = (z - back.Z) / dir.Z
+			return back + dir * t + V3(0, lift, 0)
+		end
+		local p0, p1 = railAt(-3.0, 0.52), railAt(3.2, 0.52)
+		local padCf = base * frameX((p0 + p1) / 2, p1 - p0)
+		part(m, padCf, V3((p1 - p0).Magnitude, 0.44, 0.62), C.lavender, VELVET, SHADOW)
+		for _, side in { -0.31, 0.31 } do
+			local o = padCf:VectorToWorldSpace(V3(0, 0, side))
+			cylBetween(m, base * p0 + o, base * p1 + o, 0.44, C.lavender, VELVET, SHADOW)
+			local low = padCf:VectorToWorldSpace(V3(0, -0.2, side * 1.5))
+			bead({ base * p0 + low, base * p1 + low }, 0.12)
+		end
+		bead({ P(sx * 5.4, 4.3, 4.42), P(sx * 5.62, 5.3, 4.8), P(sx * 5.78, 6.4, 4.66), P(sx * 5.78, 7.4, 4.28), P(sx * 5.75, 8.2, 4.05) }, 0.8, GD, GOLD_S)
+		carving(base * CF(sx * 5.66, 5.75, 5.12) * ANG(-0.35, 0, 0), V3(0.55, 1.5, 0.28))
+		part(m, base * CF(x, 8.55, 4.25), V3(1.15, 1.35, 1.35), G, GM, merge(GOLD_P, CYL_P))
+		part(m, base * CF(x + sx * 0.6, 8.55, 4.25), V3(0.1, 0.95, 0.95), C.purple, VELVET, CYL_P)
+		ball(m, P(x + sx * 0.66, 8.55, 4.25), 0.4, G, GM, GOLD_P)
+		ball(m, P(x, 7.85, 4.5), 0.6, G, GM, GOLD_P)
 	end
 	return m
 end

@@ -7,8 +7,12 @@ Roblox's built-in materials), it has:
 - **Golden flower bed.** About 2,400 satin-gloss buttercups on leafy mounds, with the
   bright raised clusters laid out as in the original room. Some are buds and some turn
   toward the light. A dirt clearing holds the throne.
-- **Asgore's throne.** Tufted purple velvet in a brushed-gold frame, with an arched back,
-  a crown crest, scrolled armrests and a small Delta Rune on the backrest.
+- **Asgore's throne.** A gilded throne with a reclined, arched back of diamond-buttoned
+  purple velvet, pleated between the buttons. Its frame has reeded stiles, urn finials,
+  beaded moldings, and a crest with Asgore's crown, gems, scrolls and acanthus leaves.
+  The legs are turned on bun feet, under rosette dies. The open arms have velvet pads and
+  curve down to scrolls. The seat is a rounded cushion with gold piping and nailheads,
+  over a carved shell apron. A small Delta Rune sits in the arch.
 - **The covered throne.** A second throne under a linen dust sheet, gold feet showing.
 - **Stained-glass window.** A pointed-arch window with the Delta Rune (winged circle over
   three triangles) in amber glass. Its lead lines cast the pattern onto the floor.
@@ -37,6 +41,7 @@ bloom and terrain grass are not Roblox's.
 | ![Entrance](preview/entrance.jpg) | ![Throne](preview/throne.jpg) |
 | ![Window](preview/window.jpg) | ![Hall](preview/hall.jpg) |
 | ![Ivy](preview/ivy.jpg) | ![Corridor](preview/corridor.jpg) |
+| ![Throne close-up](preview/throne-close.jpg) | ![Throne legs and apron](preview/throne-legs.jpg) |
 
 ## Use it
 
@@ -124,7 +129,7 @@ effects are its children. Change them there.
 **Performance.** Flowers, ivy and other small details are anchored and don't collide,
 take touches or cast shadows. Walls, floors and furniture do. With textures there are
 about 21k parts, since ivy cut-outs replace most of the ivy mounds; without them, about
-25k.
+26k. The throne is about 580 of them.
 
 ## Rebuild the files
 
