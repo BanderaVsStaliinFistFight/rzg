@@ -82,6 +82,13 @@ roblox.implementProperty("RunService", "RenderStepped", function(self)
 	return signalFor(self, "RenderStepped")
 end)
 roblox.implementMethod("Sound", "Play", function() end)
+local fills = 0
+roblox.implementMethod("Terrain", "FillBlock", function(_, cframe, size, material)
+	assert(size.X > 0 and size.Y > 0 and size.Z > 0, "terrain strip has no size")
+	assert(material == roblox.Enum.Material.Grass, "terrain strip isn't grass")
+	fills += 1
+end)
+roblox.implementMethod("Terrain", "SetMaterialColor", function() end)
 -- Any smooth sun path will do: what matters is that aimSun can steer it.
 roblox.implementMethod("Lighting", "GetSunDirection", function(self)
 	local t = (self.ClockTime - 6) / 12 * math.pi
@@ -107,6 +114,7 @@ local workspace = game:GetService("Workspace")
 local players = game:GetService("Players")
 player.Parent = players
 players.LocalPlayer = player
+Instance.new("Terrain").Parent = workspace
 local function environment(extra)
 	local env = { game = game, workspace = workspace }
 	for _, name in DATATYPES do
@@ -129,6 +137,9 @@ check(lighting:FindFirstChildOfClass("Atmosphere") ~= nil, "post effects copied 
 local toward = preset:GetAttribute("SunToward")
 check(lighting:GetSunDirection():Dot(toward) > 0.97, "builder aimed the sun through the window")
 check(room:FindFirstChild("SavePrompt", true) ~= nil, "save point has its prompt")
+check(#game:GetService("MaterialService"):GetChildren() == 0, "no textures uploaded: built-in materials only")
+local plan = room:FindFirstChild("TerrainPlan")
+check(plan ~= nil and #plan.Value > 100, "terrain grass plan saved for the server")
 
 -- scripts --------------------------------------------------------------------------------------
 
@@ -156,6 +167,7 @@ local server = run("ThroneRoomServer")
 check(server.RunContext == roblox.Enum.RunContext.Server, "server script runs on the server")
 check(lighting:FindFirstChildOfClass("BloomEffect") ~= nil, "server applied the post effects")
 check(lighting:GetSunDirection():Dot(toward) > 0.97, "server aimed the sun through the window")
+check(fills > 100 and room:GetAttribute("TerrainBuilt") == true, "server grew the terrain grass (" .. fills .. " strips)")
 
 print("Running ThroneRoomFX")
 room:SetAttribute("MusicId", "1234567890")
@@ -172,6 +184,38 @@ signalFor(prompt, "Triggered"):Fire(player)
 check(guiSeen, "saving shows the dialog box")
 check(playerGui:FindFirstChild("SaveDialog") == nil, "the dialog box closes afterwards")
 check(humanoid.Health == humanoid.MaxHealth, "saving restores health")
+
+-- with textures --------------------------------------------------------------------------------
+
+print("Building with every texture uploaded")
+local ids = {}
+for i, file in fs.readDir("textures") do
+	local name = file:match("^(.+)%.png$")
+	if name then
+		ids[name] = "rbxassetid://" .. (1000 + i)
+	end
+end
+local game2 = Instance.new("DataModel")
+local env2 = environment({ __LUNE = true, __PREVIEW_TEXTURES = ids })
+env2.game, env2.workspace = game2, game2:GetService("Workspace")
+local room2 = luau.load(source, { debugName = "ThroneRoomBuilder", environment = env2 })()
+local variants = game2:GetService("MaterialService"):GetChildren()
+check(#variants == 13, "13 MaterialVariants made (" .. #variants .. ")")
+local textured, decals, textures = 0, 0, 0
+for _, d in room2:GetDescendants() do
+	if d:IsA("BasePart") and d.MaterialVariant ~= "" then
+		textured += 1
+	elseif d.ClassName == "Decal" then
+		decals += 1
+	elseif d.ClassName == "Texture" then
+		textures += 1
+	end
+end
+check(textured > 10000, "parts use the textured materials (" .. textured .. ")")
+check(decals > 1000, "ivy and grass cut-outs placed (" .. decals .. " decals)")
+check(textures > 50, "grime and glass textures placed (" .. textures .. ")")
+local wall = room2.Architecture.Walls:FindFirstChildWhichIsA("BasePart")
+check(wall.MaterialVariant == "ThroneRoom_plaster", "walls are plaster")
 
 if failures > 0 then
 	error(failures .. " check(s) failed")

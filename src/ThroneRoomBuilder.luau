@@ -12,6 +12,11 @@
 	    save point's spin and dialog box need the place file or the command bar, because a
 	    running game can't create scripts.
 
+	Textures: the PBR textures in textures/ make the room look far more realistic, but
+	Roblox only shows images that have been uploaded. Run tools/upload_textures.py once (it
+	fills in TEXTURE_IDS below), or paste ids from Studio's Asset Manager by hand. Until
+	then every surface uses Roblox's built-in materials.
+
 	Room space (studs): the inside face of the back wall is z = 0 and +z runs toward the
 	entrance corridor. x = 0 is the room's centre line, y = 0 is the floor.
 
@@ -30,9 +35,66 @@ local CONFIG = {
 	MoveCamera = true, -- command bar only: frame the room after building
 	ReplaceExisting = true, -- delete an earlier AsgoreThroneRoom in Workspace first
 	MusicId = "", -- optional: the numeric id of an audio asset you are allowed to use
+	TerrainGrass = true, -- grow terrain grass on the green floor (Studio and live games)
 }
 
+-- Uploaded texture ids (numbers or rbxassetid:// links). tools/upload_textures.py writes
+-- them between the BEGIN and END lines. Empty ones fall back to built-in materials.
+-- BEGIN TEXTURE IDS
+local TEXTURE_IDS = {
+	glass_card = "",
+	gold_color = "",
+	gold_metalness = "",
+	gold_normal = "",
+	gold_roughness = "",
+	grass_card = "",
+	grass_color = "",
+	grass_normal = "",
+	grass_roughness = "",
+	grime_card = "",
+	ivy_card = "",
+	leaves_color = "",
+	leaves_normal = "",
+	leaves_roughness = "",
+	limestone_color = "",
+	limestone_normal = "",
+	limestone_roughness = "",
+	linen_color = "",
+	linen_normal = "",
+	linen_roughness = "",
+	petal_color = "",
+	petal_normal = "",
+	petal_roughness = "",
+	plaster_color = "",
+	plaster_normal = "",
+	plaster_roughness = "",
+	sandstone_color = "",
+	sandstone_normal = "",
+	sandstone_roughness = "",
+	soil_color = "",
+	soil_normal = "",
+	soil_roughness = "",
+	terracotta_color = "",
+	terracotta_normal = "",
+	terracotta_roughness = "",
+	velvet_color = "",
+	velvet_normal = "",
+	velvet_roughness = "",
+	wood_color = "",
+	wood_normal = "",
+	wood_roughness = "",
+	woodplanks_color = "",
+	woodplanks_normal = "",
+	woodplanks_roughness = "",
+}
+-- END TEXTURE IDS
+
 local IS_LUNE = __LUNE == true -- set by tools/build.luau
+if __PREVIEW_TEXTURES then -- tools/build.luau --preview: stand-in ids for the preview renderer
+	for name, id in __PREVIEW_TEXTURES do
+		TEXTURE_IDS[name] = id
+	end
+end
 
 local V3, CF, RGB = Vector3.new, CFrame.new, Color3.fromRGB
 local ANG = CFrame.Angles
@@ -93,8 +155,8 @@ local C = {
 	petalDim = RGB(214, 176, 10),
 	petal = RGB(255, 220, 0),
 	petalBright = RGB(255, 238, 60),
-	center = RGB(226, 150, 12),
-	centerDim = RGB(180, 118, 10),
+	center = RGB(214, 178, 34), -- a small boss of yellow stamens
+	centerDim = RGB(170, 140, 28),
 	stem = RGB(70, 108, 34),
 	leaf = RGB(62, 112, 40),
 	ivy = { RGB(30, 76, 46), RGB(38, 92, 52), RGB(26, 62, 40), RGB(50, 104, 56), RGB(42, 84, 38) },
@@ -193,6 +255,111 @@ local function trySet(instance, property, value)
 	end)
 end
 
+--------------------------------------------------------------------------------
+-- Textures
+--------------------------------------------------------------------------------
+
+-- Each texture set in textures/ becomes a MaterialVariant of a built-in material.
+-- `tile` is how many studs one copy of the texture covers.
+local MATERIAL_SETS = {
+	plaster = { base = M.Plaster, tile = 14, organic = true },
+	sandstone = { base = M.Sandstone, tile = 6, organic = true },
+	woodplanks = { base = M.WoodPlanks, tile = 10 },
+	wood = { base = M.Wood, tile = 8 },
+	gold = { base = M.Metal, tile = 5, organic = true },
+	velvet = { base = M.Fabric, tile = 3, organic = true },
+	linen = { base = M.Fabric, tile = 3 },
+	terracotta = { base = M.Slate, tile = 3.5, organic = true },
+	limestone = { base = M.Slate, tile = 6, organic = true },
+	soil = { base = M.Ground, tile = 6, organic = true },
+	grass = { base = M.LeafyGrass, tile = 8, organic = true },
+	petal = { base = M.SmoothPlastic, tile = 2 },
+	leaves = { base = M.LeafyGrass, tile = 3, organic = true },
+}
+local VARIANT = {} -- set name -> MaterialVariant name, for the sets that were created
+local hasVariants = false
+
+local resolvedIds = {}
+-- A texture's id, ready for a Content property, or nil if it hasn't been uploaded.
+local function texture(name)
+	local raw = TEXTURE_IDS[name]
+	if raw == nil or raw == "" then
+		return nil
+	end
+	if resolvedIds[name] == nil then
+		raw = tostring(raw)
+		local digits = raw:match("^%s*(%d+)%s*$")
+		local id = digits and ("rbxassetid://" .. digits) or raw
+		if digits and not IS_LUNE then
+			-- A bare number may be a Decal (Open Cloud uploads return those); the image
+			-- inside it is what textures need. Studio can look it up.
+			pcall(function()
+				local asset = game:GetService("InsertService"):LoadAsset(tonumber(digits))
+				local decal = asset:FindFirstChildWhichIsA("Decal", true)
+				local image = decal and decal.Texture:match("(%d+)$")
+				if image then
+					id = "rbxassetid://" .. image
+				end
+				asset:Destroy()
+			end)
+		end
+		resolvedIds[name] = id
+	end
+	return resolvedIds[name]
+end
+
+local function buildMaterialVariants()
+	local service = game:GetService("MaterialService")
+	for key, set in MATERIAL_SETS do
+		local colorMap = texture(key .. "_color")
+		if colorMap then
+			local name = "ThroneRoom_" .. key
+			local ok, err = pcall(function()
+				local old = service:FindFirstChild(name)
+				if old then
+					old:Destroy()
+				end
+				local variant = Instance.new("MaterialVariant")
+				variant.Name = name
+				variant.BaseMaterial = set.base
+				variant.ColorMap = colorMap
+				variant.NormalMap = texture(key .. "_normal") or ""
+				variant.RoughnessMap = texture(key .. "_roughness") or ""
+				variant.MetalnessMap = texture(key .. "_metalness") or ""
+				variant.StudsPerTile = set.tile
+				variant.MaterialPattern = if set.organic then Enum.MaterialPattern.Organic else Enum.MaterialPattern.Regular
+				variant.Parent = service
+			end)
+			if ok then
+				VARIANT[key] = name
+				hasVariants = true
+			else
+				print("[ThroneRoom] Couldn't make the " .. key .. " material: " .. tostring(err))
+			end
+		end
+	end
+end
+
+-- Which texture set a part gets, from its material (and, where two sets share a
+-- material, its colour).
+local DEFAULT_SET = {
+	Plaster = "plaster",
+	Sandstone = "sandstone",
+	WoodPlanks = "woodplanks",
+	Wood = "wood",
+	Metal = "gold",
+	Ground = "soil",
+	LeafyGrass = "leaves",
+}
+local function setFor(material, color)
+	if material == M.Fabric then
+		return if color.R > 0.8 and color.G > 0.8 then "linen" else "velvet"
+	elseif material == M.Slate then
+		return if color.R > color.B + 0.12 then "terracotta" else "limestone"
+	end
+	return DEFAULT_SET[material.Name]
+end
+
 -- Decorative parts are anchored and skip collisions, touches, queries and shadows.
 -- Walls, floors and furniture pass SOLID to turn those back on.
 local SOLID = { CanCollide = true, CanQuery = true, CanTouch = true, CastShadow = true }
@@ -238,9 +405,15 @@ local function part(parent, cf, size, color, material, props)
 	p.Material = material or M.SmoothPlastic
 	if props then
 		for k, v in props do
-			if k ~= "Class" and k ~= "Shape" then
+			if k ~= "Class" and k ~= "Shape" and k ~= "Variant" then
 				p[k] = v
 			end
+		end
+	end
+	if hasVariants then
+		local variant = VARIANT[props and props.Variant or setFor(p.Material, color)]
+		if variant then
+			p.MaterialVariant = variant
 		end
 	end
 	p.Parent = parent
@@ -371,6 +544,31 @@ local function model(name, parent, className)
 	return m
 end
 
+-- Cut-out images (ivy, grass, grime, glass) go on invisible parts. These hold their ids
+-- once build() knows which textures were uploaded.
+local CARDS = {}
+local CARD_P = { Transparency = 1 }
+local function decal(parent, id, face, tint)
+	local d = Instance.new("Decal")
+	d.Texture = id
+	d.Face = face
+	if tint then
+		d.Color3 = tint
+	end
+	d.Parent = parent
+	return d
+end
+local function tiled(parent, id, face, studsU, studsV, transparency)
+	local t = Instance.new("Texture")
+	t.Texture = id
+	t.Face = face
+	t.StudsPerTileU = studsU
+	t.StudsPerTileV = studsV
+	t.Transparency = transparency or 0
+	t.Parent = parent
+	return t
+end
+
 --------------------------------------------------------------------------------
 -- Walls, floor, ceiling
 --------------------------------------------------------------------------------
@@ -417,9 +615,10 @@ local function buildShell(room)
 	local walls = model("Walls", shell)
 
 	local floor = model("Floor", shell)
-	block(floor, -W - T, -3, -T, W + T, 0, STEPS[1].z, C.grass, M.LeafyGrass, SOLID)
-	block(floor, -STEPS[1].hw, -3, STEPS[1].z, STEPS[1].hw, 0, STEPS[2].z, C.grass, M.LeafyGrass, SOLID)
-	block(floor, -STEPS[2].hw, -3, STEPS[2].z, STEPS[2].hw, 0, STEPS[3].z + 2, C.grass, M.LeafyGrass, SOLID)
+	local GRASS_FLOOR = merge(SOLID, { Variant = "grass" })
+	block(floor, -W - T, -3, -T, W + T, 0, STEPS[1].z, C.grass, M.LeafyGrass, GRASS_FLOOR)
+	block(floor, -STEPS[1].hw, -3, STEPS[1].z, STEPS[1].hw, 0, STEPS[2].z, C.grass, M.LeafyGrass, GRASS_FLOOR)
+	block(floor, -STEPS[2].hw, -3, STEPS[2].z, STEPS[2].hw, 0, STEPS[3].z + 2, C.grass, M.LeafyGrass, GRASS_FLOOR)
 
 	-- side walls, and the solid blocks that make the steps toward the corridor
 	for side = -1, 1, 2 do
@@ -658,18 +857,24 @@ local function buildWindow(room)
 	local GLASS_P = {}
 	local LEAD_P = { CastShadow = true }
 
-	-- glass
-	local glass = part(win, pf * CF(0, spring / 2, -2), V3(2 * a, spring, 0.2), C.glass, M.Neon, merge(GLASS_P, { Name = "Glass" }))
+	-- glass, with streaks and seed bubbles over it when that texture is uploaded
+	local function streaky(pane)
+		if CARDS.glass then
+			tiled(pane, CARDS.glass, Enum.NormalId.Back, 5, 5, 0.1)
+		end
+		return pane
+	end
+	local glass = streaky(part(win, pf * CF(0, spring / 2, -2), V3(2 * a, spring, 0.2), C.glass, M.Neon, merge(GLASS_P, { Name = "Glass" })))
 	local yy = 0
 	while yy < WIN.h - 1e-3 do
 		local y1 = min(yy + 0.3, WIN.h)
 		local hw = archHalfWidth(R, WIN.cx, yy)
-		part(win, pf * CF(0, spring + (yy + y1) / 2, -2), V3(2 * max(0.05, hw), y1 - yy, 0.2), C.glass, M.Neon, GLASS_P)
+		streaky(part(win, pf * CF(0, spring + (yy + y1) / 2, -2), V3(2 * max(0.05, hw), y1 - yy, 0.2), C.glass, M.Neon, GLASS_P))
 		yy = y1
 	end
 	-- the narrow outer lights are a warmer tint
 	for side = -1, 1, 2 do
-		part(win, pf * CF(side * (a + 6.2) / 2, 7.25, -1.84), V3(a - 6.2, 14.5, 0.12), C.glassWarm, M.Neon, GLASS_P)
+		streaky(part(win, pf * CF(side * (a + 6.2) / 2, 7.25, -1.84), V3(a - 6.2, 14.5, 0.12), C.glassWarm, M.Neon, GLASS_P))
 	end
 
 	-- frame and hood molding
@@ -803,16 +1008,24 @@ local function foliageTop(x, z)
 	return SOIL_TOP + h, bright
 end
 
-local PETAL_P = { Shape = CYL }
+local PETAL_P = { Shape = CYL, Variant = "petal", Reflectance = 0.05 } -- buttercups are glossy
 local function flower(parent, pos, headR, petalColor, centerColor, stemFrom)
-	local fcf = CF(pos) * ANG(rr(-0.28, 0.28), rand() * TAU, rr(-0.28, 0.28))
-	local d = headR * 1.15
+	local tiltX, tiltZ = rr(-0.28, 0.28), rr(-0.28, 0.28)
 	local cup = rr(0.35, 0.62)
+	local kind = rand()
+	if kind < 0.07 then -- a bud, nearly closed
+		cup = rr(1.05, 1.3)
+		headR *= 0.7
+	elseif kind < 0.2 then -- turned toward the light
+		tiltX = rr(0.45, 0.8) * (if rand() < 0.5 then -1 else 1)
+	end
+	local fcf = CF(pos) * ANG(tiltX, rand() * TAU, tiltZ)
+	local d = headR * 1.15
 	for i = 0, 4 do
 		local pcf = fcf * ANG(0, i * TAU / 5, 0) * CF(0, 0, -headR * 0.5) * ANG(cup, 0, 0) * ANG(0, 0, PI / 2)
 		part(parent, pcf, V3(0.07, d, d), jitter(petalColor, 0.04), M.SmoothPlastic, PETAL_P)
 	end
-	part(parent, fcf * CF(0, 0.05, 0), V3(headR * 0.5, headR * 0.5, headR * 0.5), centerColor, M.SmoothPlastic, BALL_P)
+	part(parent, fcf * CF(0, 0.02, 0), V3(headR * 0.34, headR * 0.34, headR * 0.34), centerColor, M.SmoothPlastic, BALL_P)
 	if stemFrom then
 		cylBetween(parent, stemFrom, pos - fcf.UpVector * 0.1, 0.14, C.stem, M.SmoothPlastic)
 	end
@@ -931,9 +1144,26 @@ end
 -- Ivy and bushes
 --------------------------------------------------------------------------------
 
+-- With the ivy texture uploaded: a cut-out of ivy sprigs standing just off the wall,
+-- sometimes with a leafy mound behind it for depth.
+local function ivyCard(parent, pf, x, y, scale)
+	local size = rr(3.0, 4.0) * scale
+	local cf = pf * CF(x, y, rr(0.5, 1.0) * scale) * ANG(rr(-0.2, 0.2), rr(-0.2, 0.2), rr(-0.4, 0.4))
+	local card = part(parent, cf, V3(size, size, 0.05), C.ivy[1], M.SmoothPlastic, CARD_P)
+	local g = rr(0.78, 1.0)
+	decal(card, CARDS.ivy, Enum.NormalId.Back, Color3.new(g, g, g))
+	if rand() < 0.3 then
+		local r = rr(0.5, 0.8) * scale
+		part(parent, pf * CF(x + rr(-0.6, 0.6), y + rr(-0.6, 0.6), -r * 0.2), V3(2 * r, 2 * r, 2 * r), jitter(pick(C.ivy), 0.08), M.LeafyGrass, BALL_P)
+	end
+end
+
 -- A low leafy mound pressed into the wall, with a leaf or two standing off it.
 local function ivyLeaf(parent, pf, x, y, scale)
 	scale = scale or 1
+	if CARDS.ivy then
+		return ivyCard(parent, pf, x, y, scale)
+	end
 	local r = rr(0.7, 1.15) * scale
 	local z0 = r * rr(-0.25, 0.1)
 	local cf = pf * CF(x, y, z0)
@@ -952,7 +1182,7 @@ end
 
 -- Ivy over a rectangle of wall. Denser patches use bigger mounds so they close up.
 local function ivyPatch(parent, pf, x0, x1, y0, y1, density)
-	local step = 2.0
+	local step = if CARDS.ivy then 2.7 else 2.0
 	local scale = 0.9 + max(0, density - 0.5) * 1.4
 	for y = y0 + step * 0.5, y1, step do
 		for x = x0 + step * 0.5, x1, step do
@@ -970,10 +1200,10 @@ local function ivyVine(parent, pf, x, yTop, length)
 		local taper = 1 - (yTop - y) / length * 0.45
 		cx += rr(-0.4, 0.4)
 		ivyLeaf(parent, pf, cx, y, taper)
-		if rand() < 0.6 then
+		if rand() < (if CARDS.ivy then 0.3 else 0.6) then
 			ivyLeaf(parent, pf, cx + rr(-1.3, 1.3), y - rr(0, 0.6), taper * 0.8)
 		end
-		y -= rr(1.1, 1.5)
+		y -= if CARDS.ivy then rr(1.8, 2.3) else rr(1.1, 1.5)
 	end
 end
 
@@ -1065,6 +1295,161 @@ local function bush(parent, cx, cz, rx, rz, height)
 end
 
 --------------------------------------------------------------------------------
+-- Weathering and grass
+--------------------------------------------------------------------------------
+
+-- The interior wall faces, each with the room on its left (as in buildTrim).
+local function wallRuns()
+	local runs = {
+		{ -W, 0, DOOR.x0 - 1.1, 0 },
+		{ DOOR.x1 + 1.1, 0, W, 0 },
+		{ -W, STEPS[1].z, -W, 0 },
+		{ -STEPS[1].hw, STEPS[1].z, -W, STEPS[1].z },
+		{ -STEPS[1].hw, STEPS[2].z, -STEPS[1].hw, STEPS[1].z },
+		{ -STEPS[2].hw, STEPS[2].z, -STEPS[1].hw, STEPS[2].z },
+		{ -STEPS[2].hw, STEPS[3].z, -STEPS[2].hw, STEPS[2].z },
+		{ -CORRIDOR.hw, STEPS[3].z, -STEPS[2].hw, STEPS[3].z },
+	}
+	for i = 3, #runs do -- the same walls on the right
+		local r = runs[i]
+		table.insert(runs, { -r[3], r[4], -r[1], r[2] })
+	end
+	return runs
+end
+
+-- Dust and soot: a band of grime above the wainscot, and a darker one under the cornice
+-- (turned upside down), since light never quite reaches the corners of a room.
+local function buildGrime(room)
+	local grime = model("Grime", room, "Folder")
+	local function band(x0, z0, x1, z1, y0, y1, flip)
+		local pf, len = wallPlane(x0, z0, x1, z1)
+		local cf = pf * CF(len / 2, (y0 + y1) / 2, 0.14)
+		if flip then
+			cf *= ANG(0, 0, PI)
+		end
+		local p = part(grime, cf, V3(len, y1 - y0, 0.04), C.wall, M.SmoothPlastic, CARD_P)
+		tiled(p, CARDS.grime, Enum.NormalId.Back, 20, y1 - y0, 0.15)
+	end
+	for _, r in wallRuns() do
+		band(r[1], r[2], r[3], r[4], 3.15, 7, false)
+	end
+	for _, r in wallRuns() do
+		if r[2] ~= 0 or r[4] ~= 0 then
+			band(r[1], r[2], r[3], r[4], 37.5, H - 2.4, true)
+		end
+	end
+	-- under the cornice of the back wall, leaving the window clear
+	band(-W, 0, WIN.x - WIN.a - 2.3, 0, 37.5, H - 2.4, true)
+	band(WIN.x + WIN.a + 2.3, 0, W, 0, 37.5, H - 2.4, true)
+	for _, r in { { -CORRIDOR.hw, CORRIDOR.z1, -CORRIDOR.hw, STEPS[3].z + 1 }, { CORRIDOR.hw, STEPS[3].z + 1, CORRIDOR.hw, CORRIDOR.z1 } } do
+		band(r[1], r[2], r[3], r[4], 3.15, 6.5, false)
+		band(r[1], r[2], r[3], r[4], CORRIDOR.h - 6.5, CORRIDOR.h - 2.4, true)
+	end
+end
+
+-- A tuft of tall grass: two crossed cut-outs, showing from both sides.
+local function grassTuft(parent, pos, h)
+	local yaw = rand() * PI
+	local g = rr(0.75, 1.0)
+	for i = 0, 1 do
+		local cf = CF(pos + V3(0, h / 2 - 0.15, 0)) * ANG(0, yaw + i * PI / 2, 0)
+		local p = part(parent, cf, V3(h * 1.1, h, 0.05), C.grass, M.SmoothPlastic, CARD_P)
+		decal(p, CARDS.grass, Enum.NormalId.Front, Color3.new(g, g, g))
+		decal(p, CARDS.grass, Enum.NormalId.Back, Color3.new(g, g, g))
+	end
+end
+
+local function hallHalfWidth(z)
+	if z < STEPS[1].z then
+		return W
+	elseif z < STEPS[2].z then
+		return STEPS[1].hw
+	end
+	return STEPS[2].hw
+end
+
+local function buildGrassTufts(room, bushes)
+	local tufts = model("GrassTufts", room, "Folder")
+	-- along the foot of the side walls
+	for z = 12, STEPS[3].z - 2, 2.2 do
+		local hw = hallHalfWidth(z)
+		for _, side in { -1, 1 } do
+			if rand() < 0.7 then
+				grassTuft(tufts, V3(side * (hw - rr(0.9, 2.2)), 0, z + rr(-0.8, 0.8)), rr(1.2, 2.6))
+			end
+		end
+	end
+	-- around the flower bed
+	local placed, tries = 0, 0
+	while placed < 140 and tries < 4000 do
+		tries += 1
+		local ang = rand() * TAU
+		local r = rr(1.0, 1.14)
+		local x, z = BED.cx + cos(ang) * BED.rx * r, BED.cz + sin(ang) * BED.rz * r
+		local e = bedEdge(x, z)
+		if e > 1.01 and e < 1.12 and z > 11 then
+			placed += 1
+			grassTuft(tufts, V3(x, 0, z), rr(1.0, 2.2))
+		end
+	end
+	-- around the bushes
+	for _, b in bushes do
+		for i = 1, 14 do
+			local ang = i / 14 * TAU + rr(-0.2, 0.2)
+			local r = rr(0.95, 1.1)
+			grassTuft(tufts, V3(b.x + cos(ang) * b.rx * r, 0, b.z + sin(ang) * b.rz * r), rr(1.2, 2.4))
+		end
+	end
+end
+
+-- Terrain grass for the green floor, as strips {x0, x1, z} two studs deep. Terrain isn't
+-- in the place file Lune writes, so the plan is saved and ThroneRoomServer grows it there.
+local TERRAIN_GRASS = RGB(74, 106, 48)
+local function terrainStrips()
+	local strips = {}
+	for z = 12, STEPS[3].z - 1, 2 do
+		local hw = hallHalfWidth(z) - 1
+		local start = nil
+		local x = -hw
+		while x <= hw + 1e-6 do
+			local open = bedEdge(x, z) > 1.06
+			if open and not start then
+				start = x
+			end
+			local last = x + 2 > hw + 1e-6
+			if start and (not open or last) then
+				local stop = if open then x else x - 2
+				if stop >= start then
+					table.insert(strips, { start - 1, stop + 1, z })
+				end
+				start = nil
+			end
+			x += 2
+		end
+	end
+	return strips
+end
+
+local function growTerrain(strips)
+	local terrain = workspace:FindFirstChildOfClass("Terrain")
+	if not terrain then
+		return false
+	end
+	local ok = pcall(function()
+		if CONFIG.ReplaceExisting then
+			terrain:FillBlock(ORIGIN * CF(0, -1.6, (STEPS[3].z - 4) / 2), V3(2 * W + 2, 6, STEPS[3].z + 6), Enum.Material.Air)
+		end
+		for _, s in strips do
+			terrain:FillBlock(ORIGIN * CF((s[1] + s[2]) / 2, -1.6, s[3]), V3(s[2] - s[1], 4.8, 2), Enum.Material.Grass)
+		end
+		terrain:SetMaterialColor(Enum.Material.Grass, TERRAIN_GRASS)
+	end)
+	trySet(terrain, "Decoration", true)
+	trySet(terrain, "GrassLength", 0.7)
+	return ok
+end
+
+--------------------------------------------------------------------------------
 -- Thrones
 --------------------------------------------------------------------------------
 
@@ -1122,8 +1507,8 @@ local function buildAsgoreThrone(parent)
 				ball(m, P(x, y, -3.22), 0.38, G, GM, {})
 			end
 			local px, py = x + 1.0, y + 0.92
-			if abs(px) < 4.0 and py < 11.6 then
-				ellipsoid(m, base * CF(px, py, -3.3), V3(1.9, 1.6, 0.42), C.purple, {})
+			if abs(px) < 4.0 and py < 11.6 then -- a velvet dome, mostly sunk into the panel
+				ball(m, P(px, py, -3.75), 1.4, C.purple, M.Fabric, {})
 			end
 		end
 	end
@@ -1568,6 +1953,25 @@ if preset and room:GetAttribute("ApplyLighting") ~= false then
 	end
 end
 
+-- Terrain grass, from the plan the builder left when it couldn't grow it itself
+local plan = room:FindFirstChild("TerrainPlan")
+if plan and room:GetAttribute("TerrainGrass") and not room:GetAttribute("TerrainBuilt") then
+	local terrain = workspace.Terrain
+	local pivot = room.WorldPivot
+	for a, b, z in plan.Value:gmatch("([%-%d%.]+),([%-%d%.]+),([%-%d%.]+)") do
+		a, b, z = tonumber(a), tonumber(b), tonumber(z)
+		terrain:FillBlock(pivot * CFrame.new((a + b) / 2, -1.6, z), Vector3.new(b - a, 4.8, 2), Enum.Material.Grass)
+	end
+	local color = plan:GetAttribute("GrassColor")
+	if typeof(color) == "Color3" then
+		terrain:SetMaterialColor(Enum.Material.Grass, color)
+	end
+	pcall(function()
+		terrain.Decoration = true
+	end)
+	room:SetAttribute("TerrainBuilt", true)
+end
+
 local prompt = room:FindFirstChild("SavePrompt", true)
 if prompt then
 	prompt.Triggered:Connect(function(player)
@@ -1712,10 +2116,17 @@ local function build()
 		end
 	end
 
+	buildMaterialVariants()
+	CARDS.ivy = texture("ivy_card")
+	CARDS.grass = texture("grass_card")
+	CARDS.grime = texture("grime_card")
+	CARDS.glass = texture("glass_card")
+
 	local room = Instance.new("Model")
 	room.Name = "AsgoreThroneRoom"
 	room:SetAttribute("ApplyLighting", CONFIG.ApplyLighting)
 	room:SetAttribute("MusicId", CONFIG.MusicId)
+	room:SetAttribute("TerrainGrass", CONFIG.TerrainGrass)
 
 	local shell = buildShell(room)
 	buildTrim(shell)
@@ -1724,9 +2135,20 @@ local function build()
 	buildFlowerBed(room)
 	buildIvy(room)
 	local bushes = model("Bushes", room)
-	bush(bushes, -28, 116.5, 8.5, 7.5, 4.2)
-	bush(bushes, 27, 116.5, 8.5, 7.5, 4.2)
-	bush(bushes, 0, 128, 11.5, 8.5, 5)
+	local BUSHES = {
+		{ x = -28, z = 116.5, rx = 8.5, rz = 7.5, h = 4.2 },
+		{ x = 27, z = 116.5, rx = 8.5, rz = 7.5, h = 4.2 },
+		{ x = 0, z = 128, rx = 11.5, rz = 8.5, h = 5 },
+	}
+	for _, b in BUSHES do
+		bush(bushes, b.x, b.z, b.rx, b.rz, b.h)
+	end
+	if CARDS.grime then
+		buildGrime(room)
+	end
+	if CARDS.grass then
+		buildGrassTufts(room, BUSHES)
+	end
 	local thrones = model("Thrones", room)
 	buildAsgoreThrone(thrones)
 	buildCoveredThrone(thrones)
@@ -1755,6 +2177,22 @@ local function build()
 	room.WorldPivot = ORIGIN
 	room.Parent = workspace
 
+	if CONFIG.TerrainGrass then
+		local strips = terrainStrips()
+		local encoded = {}
+		for i, s in strips do
+			encoded[i] = string.format("%g,%g,%g", s[1], s[2], s[3])
+		end
+		local plan = Instance.new("StringValue")
+		plan.Name = "TerrainPlan"
+		plan.Value = table.concat(encoded, ";")
+		plan:SetAttribute("GrassColor", TERRAIN_GRASS)
+		plan.Parent = room
+		if not IS_LUNE and growTerrain(strips) then
+			room:SetAttribute("TerrainBuilt", true)
+		end
+	end
+
 	if CONFIG.ApplyLighting then
 		applyLighting(preset)
 	end
@@ -1781,7 +2219,11 @@ local function build()
 		trySet(camera, "Focus", CFrame.new(ORIGIN * V3(0, 6, 30)))
 	end
 
-	print(string.format("[ThroneRoom] Built Asgore's throne room: %d parts in %.1fs.", partCount, os.clock() - startClock))
+	local textured = 0
+	for _ in VARIANT do
+		textured += 1
+	end
+	print(string.format("[ThroneRoom] Built Asgore's throne room: %d parts, %d textured materials, in %.1fs.", partCount, textured, os.clock() - startClock))
 	return room
 end
 

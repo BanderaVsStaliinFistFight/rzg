@@ -2,9 +2,10 @@
 	Builds dist/AsgoreThroneRoom.rbxl (a place) and dist/AsgoreThroneRoom.rbxm (the room as a
 	model) by running src/ThroneRoomBuilder.luau in Lune (https://lune-org.github.io/docs).
 
-	From roblox/asgore-throne-room:
+	From the repository root:
 	    lune run tools/build
-	    lune run tools/build -- --parts preview/parts.json   (also dump parts for a preview)
+	    lune run tools/build -- --parts tools/preview/parts.json   (also dump parts for a preview)
+	    lune run tools/build -- --preview   (only the dump, as if every texture were uploaded)
 ]]
 
 local fs = require("@lune/fs")
@@ -18,7 +19,27 @@ local Instance = roblox.Instance
 local game = Instance.new("DataModel")
 local workspace = game:GetService("Workspace")
 
+local args = {}
+for i, arg in process.args do
+	args[arg] = process.args[i + 1] or true
+end
+local preview = args["--preview"] ~= nil
+local partsPath = args["--parts"]
+if preview and type(partsPath) ~= "string" then
+	partsPath = "tools/preview/parts.json"
+end
+
 local env = { __LUNE = true, game = game, workspace = workspace }
+if preview then
+	-- stand-in ids that the preview renderer maps back to textures/<name>.png
+	env.__PREVIEW_TEXTURES = {}
+	for _, file in fs.readDir("textures") do
+		local name = file:match("^(.+)%.png$")
+		if name then
+			env.__PREVIEW_TEXTURES[name] = "preview://" .. name
+		end
+	end
+end
 for _, name in {
 	"Instance",
 	"Vector2",
@@ -66,31 +87,53 @@ for _, className in { "StarterPlayerScripts", "StarterCharacterScripts" } do
 	folder.Parent = starterPlayer
 end
 
-if not fs.isDir("dist") then
-	fs.writeDir("dist")
+if not preview then
+	if not fs.isDir("dist") then
+		fs.writeDir("dist")
+	end
+	fs.writeFile("dist/AsgoreThroneRoom.rbxl", roblox.serializePlace(game))
+	fs.writeFile("dist/AsgoreThroneRoom.rbxm", roblox.serializeModel({ room }))
+	print("Wrote dist/AsgoreThroneRoom.rbxl and dist/AsgoreThroneRoom.rbxm")
 end
-fs.writeFile("dist/AsgoreThroneRoom.rbxl", roblox.serializePlace(game))
-fs.writeFile("dist/AsgoreThroneRoom.rbxm", roblox.serializeModel({ room }))
-print("Wrote dist/AsgoreThroneRoom.rbxl and dist/AsgoreThroneRoom.rbxm")
 
 -- Optional: dump every part (and the lights) as JSON, for previews outside Roblox.
-local partsPath
-for i, arg in process.args do
-	if arg == "--parts" then
-		partsPath = process.args[i + 1]
-	end
-end
 if partsPath then
 	local function color(c)
 		return { c.R, c.G, c.B }
 	end
-	local parts, lights, beams = {}, {}, {}
+	local parts, lights, beams, variants = {}, {}, {}, {}
+	for _, v in game:GetService("MaterialService"):GetChildren() do
+		if v:IsA("MaterialVariant") then
+			variants[v.Name] = {
+				color = v.ColorMap,
+				normal = v.NormalMap,
+				roughness = v.RoughnessMap,
+				metalness = v.MetalnessMap,
+				tile = v.StudsPerTile,
+			}
+		end
+	end
 	for _, d in room:GetDescendants() do
 		if d:IsA("BasePart") then
 			local mesh = d:FindFirstChildOfClass("SpecialMesh")
 			local shape = nil
 			if d.ClassName == "Part" then
 				shape = d.Shape.Name
+			end
+			local images = nil
+			for _, c in d:GetChildren() do
+				if c:IsA("Decal") then -- Texture is a kind of Decal
+					images = images or {}
+					table.insert(images, {
+						kind = c.ClassName,
+						texture = c.Texture,
+						face = c.Face.Name,
+						color = color(c.Color3),
+						transparency = c.Transparency,
+						u = if c:IsA("Texture") then c.StudsPerTileU else nil,
+						v = if c:IsA("Texture") then c.StudsPerTileV else nil,
+					})
+				end
 			end
 			table.insert(parts, {
 				class = d.ClassName,
@@ -103,6 +146,8 @@ if partsPath then
 				transparency = d.Transparency,
 				shadow = d.CastShadow,
 				name = d.Name,
+				variant = if d.MaterialVariant ~= "" then d.MaterialVariant else nil,
+				images = images,
 			})
 		elseif d:IsA("Light") then
 			local holder = d.Parent
@@ -138,6 +183,7 @@ if partsPath then
 			parts = parts,
 			lights = lights,
 			beams = beams,
+			variants = variants,
 			camera = { camera.CFrame:GetComponents() },
 		})
 	)

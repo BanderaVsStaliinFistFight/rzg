@@ -5,8 +5,8 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 
-const root = __dirname;
-const types = { '.html': 'text/html', '.js': 'text/javascript', '.json': 'application/json' };
+const root = path.resolve(__dirname, '..', '..'); // serve the repo, so textures/ is reachable
+const types = { '.html': 'text/html', '.js': 'text/javascript', '.json': 'application/json', '.png': 'image/png' };
 const server = http.createServer((req, res) => {
   const p = path.join(root, decodeURIComponent(req.url.split('?')[0]));
   fs.readFile(p, (err, buf) => {
@@ -28,7 +28,7 @@ const server = http.createServer((req, res) => {
     const page = await browser.newPage({ viewport: { width: w, height: h } });
     page.on('console', m => console.log(v, 'console:', m.text()));
     page.on('pageerror', e => console.log(v, 'error:', e.message));
-    await page.goto(`http://localhost:${port}/render.html?view=${v}&w=${w}&h=${h}`);
+    await page.goto(`http://localhost:${port}/tools/preview/render.html?view=${v}&w=${w}&h=${h}`);
     await page.waitForFunction(() => window.__done === true, null, { timeout: 180000 });
     await page.screenshot({ path: path.join(outDir, `${v}.png`) });
     console.log('rendered', v);

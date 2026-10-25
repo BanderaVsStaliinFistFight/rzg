@@ -1,10 +1,13 @@
 <!doctype html>
-<!-- Approximate preview of the room's parts with three.js; driven by shoot.js. -->
+<!-- Approximate preview of the room's parts with three.js; driven by shoot.js. It knows the
+     room's MaterialVariants (textures tiled by studs, like Roblox), Decals and Textures,
+     but not Roblox's lighting, so treat the result as a layout and materials check. -->
 <html><head><meta charset="utf-8"><style>html,body{margin:0;background:#000}</style></head>
 <body>
-<script type="importmap">{"imports":{"three":"./node_modules/three/build/three.module.js"}}</script>
+<script type="importmap">{"imports":{"three":"./node_modules/three/build/three.module.js","three/addons/":"./node_modules/three/examples/jsm/"}}</script>
 <script type="module">
 import * as THREE from 'three';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 
 const params = new URLSearchParams(location.search);
 const view = params.get('view') || 'entrance';
@@ -20,88 +23,204 @@ renderer.toneMappingExposure = 1.05;
 document.body.appendChild(renderer.domElement);
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x000000);
+// soft reflections, as Roblox's environment lighting gives (metals look black without them)
+scene.environment = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(), 0.04).texture;
+scene.environmentIntensity = 0.35;
 
 const topView = view === 'top';
 const ceilingCut = topView ? 30 : 1e9;
 
+// textures: "preview://name" ids from `lune run tools/build -- --preview` map to textures/name.png
+const loader = new THREE.TextureLoader();
+const textureCache = new Map();
+const pending = [];
+function tex(id, srgb) {
+  if (!id || !id.startsWith('preview://')) return null;
+  const key = id + (srgb ? '|srgb' : '');
+  if (!textureCache.has(key)) {
+    let done;
+    pending.push(new Promise((resolve) => { done = resolve; }));
+    const t = loader.load('../../textures/' + id.slice('preview://'.length) + '.png', done, undefined, done);
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
+    t.anisotropy = 8;
+    textureCache.set(key, t);
+  }
+  return textureCache.get(key);
+}
+
+// Tile a MaterialVariant by studs on each face, as Roblox does, using the part's size
+// (the instance matrix's scale) and the side the vertex faces.
+function tileByStuds(material, studsPerTile) {
+  material.onBeforeCompile = (shader) => {
+    shader.uniforms.studsPerTile = { value: studsPerTile };
+    shader.vertexShader = 'uniform float studsPerTile;\n' + shader.vertexShader.replace('#include <uv_vertex>', `#include <uv_vertex>
+      {
+        vec3 sc = vec3(1.0);
+        #ifdef USE_INSTANCING
+          sc = vec3(length(instanceMatrix[0].xyz), length(instanceMatrix[1].xyz), length(instanceMatrix[2].xyz));
+        #endif
+        vec3 lp = position * sc;
+        vec3 an = abs(normal);
+        vec2 tuv = (an.x > an.y && an.x > an.z) ? lp.zy : ((an.y > an.z) ? lp.xz : lp.xy);
+        tuv /= studsPerTile;
+        #ifdef USE_MAP
+          vMapUv = tuv;
+        #endif
+        #ifdef USE_NORMALMAP
+          vNormalMapUv = tuv;
+        #endif
+        #ifdef USE_ROUGHNESSMAP
+          vRoughnessMapUv = tuv;
+        #endif
+        #ifdef USE_METALNESSMAP
+          vMetalnessMapUv = tuv;
+        #endif
+      }`);
+  };
+  material.customProgramCacheKey = () => 'studs' + studsPerTile;
+}
+
 // geometries (unit sized, Roblox conventions)
 const box = new THREE.BoxGeometry(1, 1, 1);
-const sphere = new THREE.SphereGeometry(0.5, 14, 10);
-const cyl = new THREE.CylinderGeometry(0.5, 0.5, 1, 16); cyl.rotateZ(-Math.PI / 2); // axis along X
+const sphere = new THREE.SphereGeometry(0.5, 16, 12);
+const cyl = new THREE.CylinderGeometry(0.5, 0.5, 1, 18); cyl.rotateZ(-Math.PI / 2); // axis along X
 const wedge = new THREE.BufferGeometry();
 {
   // Roblox wedge: profile in YZ with corners (-.5,-.5), (-.5,.5), (.5,.5) [y,z], extruded along X
   const p = [];
   const v = (x, y, z) => p.push(x, y, z);
   const L = -0.5, R = 0.5;
-  // bottom (y=-.5)
   v(L,-.5,-.5); v(R,-.5,-.5); v(R,-.5,.5);  v(L,-.5,-.5); v(R,-.5,.5); v(L,-.5,.5);
-  // back (z=.5)
   v(L,-.5,.5); v(R,-.5,.5); v(R,.5,.5);  v(L,-.5,.5); v(R,.5,.5); v(L,.5,.5);
-  // slope from (y=-.5,z=-.5) to (y=.5,z=.5)
   v(L,-.5,-.5); v(L,.5,.5); v(R,.5,.5);  v(L,-.5,-.5); v(R,.5,.5); v(R,-.5,-.5);
-  // sides
   v(L,-.5,-.5); v(L,-.5,.5); v(L,.5,.5);
   v(R,-.5,-.5); v(R,.5,.5); v(R,-.5,.5);
   wedge.setAttribute('position', new THREE.Float32BufferAttribute(p, 3));
+  wedge.setAttribute('uv', new THREE.Float32BufferAttribute(new Array(p.length / 3 * 2).fill(0), 2));
   wedge.computeVertexNormals();
 }
-
-const groups = new Map();
-function groupFor(geomKey, matKey) {
-  const key = geomKey + '|' + matKey;
-  if (!groups.has(key)) groups.set(key, { geomKey, matKey, items: [] });
-  return groups.get(key);
-}
-
-for (const p of data.parts) {
-  if (p.transparency >= 0.99) continue;
-  const [x, y, z] = p.cf;
-  if (y > ceilingCut) continue;
-  let g = 'box';
-  if (p.class === 'WedgePart') g = 'wedge';
-  else if (p.mesh === 'Sphere' || p.shape === 'Ball') g = 'sphere';
-  else if (p.shape === 'Cylinder') g = 'cyl';
-  let m = 'std';
-  if (p.material === 'Neon') m = p.transparency > 0.01 ? 'neonT' + p.transparency.toFixed(2) : 'neon';
-  else if (p.material === 'Metal') m = 'metal';
-  else if (p.transparency > 0.01) m = 'trans' + p.transparency.toFixed(2);
-  groupFor(g, m).items.push(p);
-}
-
 const geoms = { box, sphere, cyl, wedge };
-const mat4 = new THREE.Matrix4();
-for (const { geomKey, matKey, items } of groups.values()) {
+
+function partMatrix(p, withSize) {
+  const [x, y, z, r00, r01, r02, r10, r11, r12, r20, r21, r22] = p.cf;
+  let [sx, sy, sz] = withSize ? p.size : [1, 1, 1];
+  if (withSize && p.shape === 'Ball') { const d = Math.min(sx, sy, sz); sx = sy = sz = d; }
+  if (withSize && p.shape === 'Cylinder') { const d = Math.min(sy, sz); sy = sz = d; }
+  return new THREE.Matrix4().set(r00 * sx, r01 * sy, r02 * sz, x,
+                                 r10 * sx, r11 * sy, r12 * sz, y,
+                                 r20 * sx, r21 * sy, r22 * sz, z,
+                                 0, 0, 0, 1);
+}
+
+// --- parts, instanced by geometry and material ---
+const groups = new Map();
+for (const p of data.parts) {
+  const [, y] = p.cf;
+  if (y > ceilingCut) continue;
+  if (p.transparency < 0.99) {
+    let g = 'box';
+    if (p.class === 'WedgePart') g = 'wedge';
+    else if (p.mesh === 'Sphere' || p.shape === 'Ball') g = 'sphere';
+    else if (p.shape === 'Cylinder') g = 'cyl';
+    let m = 'std';
+    if (p.material === 'Neon') m = p.transparency > 0.01 ? 'neonT' + p.transparency.toFixed(2) : 'neon';
+    else if (p.material === 'Metal') m = 'metal';
+    else if (p.transparency > 0.01) m = 'trans' + p.transparency.toFixed(2);
+    const variant = p.mesh ? null : (p.variant || null);  // SpecialMesh parts don't take materials
+    const key = g + '|' + m + '|' + variant;
+    if (!groups.has(key)) groups.set(key, { g, m, variant, items: [] });
+    groups.get(key).items.push(p);
+  }
+}
+
+for (const { g, m, variant, items } of groups.values()) {
   let material;
-  if (matKey.startsWith('neon')) {
-    const t = matKey === 'neon' ? 0 : parseFloat(matKey.slice(5));
+  if (m.startsWith('neon')) {
+    const t = m === 'neon' ? 0 : parseFloat(m.slice(5));
     material = new THREE.MeshBasicMaterial({ transparent: t > 0, opacity: 1 - t, depthWrite: t === 0 });
-  } else if (matKey === 'metal') {
-    material = new THREE.MeshStandardMaterial({ roughness: 0.35, metalness: 0.75 });
-  } else if (matKey.startsWith('trans')) {
-    const t = parseFloat(matKey.slice(5));
+  } else if (m.startsWith('trans')) {
+    const t = parseFloat(m.slice(5));
     material = new THREE.MeshStandardMaterial({ roughness: 0.6, transparent: true, opacity: 1 - t, depthWrite: false });
   } else {
-    material = new THREE.MeshStandardMaterial({ roughness: 0.85, metalness: 0 });
+    material = new THREE.MeshStandardMaterial({ roughness: m === 'metal' ? 0.35 : 0.85, metalness: m === 'metal' ? 0.75 : 0 });
+    const v = variant && data.variants[variant];
+    if (v) {
+      material.map = tex(v.color, true);
+      material.normalMap = tex(v.normal, false);
+      material.roughnessMap = tex(v.roughness, false);
+      material.roughness = 1;
+      if (v.metalness) { material.metalnessMap = tex(v.metalness, false); material.metalness = 1; }
+      tileByStuds(material, v.tile);
+    }
   }
-  const mesh = new THREE.InstancedMesh(geoms[geomKey], material, items.length);
+  const mesh = new THREE.InstancedMesh(geoms[g], material, items.length);
   const col = new THREE.Color();
   items.forEach((p, i) => {
-    const [x, y, z, r00, r01, r02, r10, r11, r12, r20, r21, r22] = p.cf;
-    let [sx, sy, sz] = p.size;
-    if (p.shape === 'Ball') { const d = Math.min(sx, sy, sz); sx = sy = sz = d; }
-    if (p.shape === 'Cylinder') { const d = Math.min(sy, sz); sy = sz = d; }
-    mat4.set(r00 * sx, r01 * sy, r02 * sz, x,
-             r10 * sx, r11 * sy, r12 * sz, y,
-             r20 * sx, r21 * sy, r22 * sz, z,
-             0, 0, 0, 1);
-    mesh.setMatrixAt(i, mat4);
+    mesh.setMatrixAt(i, partMatrix(p, true));
     col.setRGB(p.color[0], p.color[1], p.color[2], THREE.SRGBColorSpace);
-    if (matKey.startsWith('neon')) col.multiplyScalar(1.6);
+    if (m.startsWith('neon')) col.multiplyScalar(1.6);
     mesh.setColorAt(i, col);
   });
-  mesh.castShadow = !matKey.startsWith('neon') && !matKey.startsWith('trans');
+  mesh.castShadow = !m.startsWith('neon') && !m.startsWith('trans');
   mesh.receiveShadow = true;
+  scene.add(mesh);
+}
+
+// --- Decals and Textures on part faces ---
+const FACES = {
+  Back: new THREE.Matrix4(),
+  Front: new THREE.Matrix4().makeRotationY(Math.PI),
+  Right: new THREE.Matrix4().makeRotationY(Math.PI / 2),
+  Left: new THREE.Matrix4().makeRotationY(-Math.PI / 2),
+  Top: new THREE.Matrix4().makeRotationX(-Math.PI / 2),
+  Bottom: new THREE.Matrix4().makeRotationX(Math.PI / 2),
+};
+function faceTransform(p, face) {
+  const [sx, sy, sz] = p.size;
+  const dims = { Back: [sx, sy, sz], Front: [sx, sy, sz], Right: [sz, sy, sx], Left: [sz, sy, sx], Top: [sx, sz, sy], Bottom: [sx, sz, sy] }[face];
+  const m = partMatrix(p, false)
+    .multiply(FACES[face])
+    .multiply(new THREE.Matrix4().makeTranslation(0, 0, dims[2] / 2 + 0.01))
+    .multiply(new THREE.Matrix4().makeScale(dims[0], dims[1], 1));
+  return { m, w: dims[0], h: dims[1] };
+}
+const plane = new THREE.PlaneGeometry(1, 1);
+const decalGroups = new Map();
+for (const p of data.parts) {
+  if (!p.images || p.cf[1] > ceilingCut) continue;
+  for (const img of p.images) {
+    const map = tex(img.texture, true);
+    if (!map) continue;
+    const { m, w, h } = faceTransform(p, img.face);
+    if (img.kind === 'Texture') {
+      const t = map.clone();
+      t.repeat.set(w / img.u, h / img.v);
+      t.needsUpdate = true;
+      const mat = new THREE.MeshStandardMaterial({ map: t, transparent: true, opacity: 1 - img.transparency, depthWrite: false, roughness: 0.9,
+        color: new THREE.Color().setRGB(img.color[0], img.color[1], img.color[2], THREE.SRGBColorSpace), polygonOffset: true, polygonOffsetFactor: -1 });
+      const mesh = new THREE.Mesh(plane, mat);
+      mesh.matrixAutoUpdate = false;
+      mesh.matrix.copy(m);
+      mesh.receiveShadow = true;
+      scene.add(mesh);
+    } else {
+      if (!decalGroups.has(img.texture)) decalGroups.set(img.texture, []);
+      decalGroups.get(img.texture).push({ m, color: img.color });
+    }
+  }
+}
+for (const [id, items] of decalGroups) {
+  const mat = new THREE.MeshStandardMaterial({ map: tex(id, true), alphaTest: 0.4, roughness: 0.7, side: THREE.FrontSide });
+  const mesh = new THREE.InstancedMesh(plane, mat, items.length);
+  const col = new THREE.Color();
+  items.forEach((it, i) => {
+    mesh.setMatrixAt(i, it.m);
+    mesh.setColorAt(i, col.setRGB(it.color[0], it.color[1], it.color[2], THREE.SRGBColorSpace));
+  });
+  mesh.receiveShadow = true;
+  mesh.castShadow = true;
+  mesh.customDepthMaterial = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, map: mat.map, alphaTest: 0.4 });
   scene.add(mesh);
 }
 
@@ -156,9 +275,12 @@ const views = {
   rune: [[9, 29.5, 9], [9, 29.5, 0]],
   star: [[0.5, 5.5, 13], [2.5, 3.4, 4.5]],
   bush: [[-6, 9, 100], [-20, 2, 125]],
+  ivy: [[-26, 14, 20], [-42, 14, 6]],
+  velvet: [[-1, 9.5, 36], [-1, 9, 26]],
+  flowers: [[-8, 4, 44], [-12, 1, 56]],
 };
 if (topView) {
-  // same framing as the reference sprite: x = (px-111.5)/2, z = (py-82)/2
+  // same framing as the original top-down room: x = (px-111.5)/2, z = (py-82)/2
   camera = new THREE.OrthographicCamera(-55.75, 54.25, 41, -165.5, 0.1, 500);
   camera.position.set(0, 200, 0);
   camera.up.set(0, 0, -1);
@@ -176,6 +298,7 @@ if (topView) {
     camera.lookAt(...at);
   }
 }
+await Promise.all(pending);
 renderer.render(scene, camera);
 window.__done = true;
 </script>
