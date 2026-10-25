@@ -30,7 +30,7 @@
 local CONFIG = {
 	Origin = CFrame.new(0, 0, 0), -- where room space (0, 0, 0) sits in the world
 	Seed = 915, -- change it for a different flower and ivy layout
-	FlowerSpacing = 1.55, -- smaller means more flowers (and more parts)
+	FlowerSpacing = 3.2, -- space between buttercup plants: smaller means more (and more parts)
 	ApplyLighting = true, -- set Lighting and post effects for the room
 	MoveCamera = true, -- command bar only: frame the room after building
 	ReplaceExisting = true, -- delete an earlier AsgoreThroneRoom in Workspace first
@@ -53,6 +53,7 @@ local TEXTURE_IDS = {
 	grass_roughness = "",
 	grime_card = "",
 	ivy_card = "",
+	leaf_card = "",
 	leaves_color = "",
 	leaves_normal = "",
 	leaves_roughness = "",
@@ -71,6 +72,7 @@ local TEXTURE_IDS = {
 	soil_color = "",
 	soil_normal = "",
 	soil_roughness = "",
+	stamen_card = "",
 	tallgrass_card = "",
 	terracotta_color = "",
 	terracotta_normal = "",
@@ -145,10 +147,8 @@ local C = {
 	tileB = RGB(138, 74, 38),
 	grout = RGB(70, 42, 24),
 	grass = RGB(36, 82, 50),
-	soil = RGB(74, 60, 28),
+	soil = RGB(54, 46, 26), -- dark loam
 	dirt = RGB(112, 76, 42),
-	foliage = RGB(80, 98, 28),
-	foliageBright = RGB(108, 126, 36),
 	petalDeep = RGB(176, 140, 8),
 	petalDim = RGB(214, 176, 10),
 	petal = RGB(255, 220, 0),
@@ -158,6 +158,10 @@ local C = {
 	stem = RGB(70, 108, 34),
 	leaf = RGB(62, 112, 40),
 	pistil = RGB(150, 166, 44), -- the green knot at the heart of a buttercup
+	stamens = RGB(240, 188, 28),
+	petalBase = RGB(206, 190, 44), -- petals are a little greener where they join
+	sepal = RGB(104, 136, 48),
+	leafDeep = RGB(46, 94, 36),
 	blade = { RGB(58, 104, 40), RGB(74, 120, 46), RGB(46, 88, 36), RGB(92, 132, 52), RGB(128, 134, 66) },
 	ivy = { RGB(30, 76, 46), RGB(38, 92, 52), RGB(26, 62, 40), RGB(50, 104, 56), RGB(42, 84, 38) },
 	ivyLeaf = { RGB(52, 112, 58), RGB(66, 126, 62), RGB(44, 98, 50), RGB(78, 134, 60) },
@@ -999,51 +1003,120 @@ local function clusterAt(x, z) -- brightness 0..1 and mound height
 end
 
 local SOIL_TOP = 0.35
-local function foliageTop(x, z)
-	local e = bedEdge(x, z)
-	local bright, mound = clusterAt(x, z)
-	local edge = clamp01((1 - e) / 0.18)
-	local h = (0.3 + 0.3 * edge) + 0.7 * mound * edge + 0.25 * noise2(x * 0.35, z * 0.35)
-	h *= 0.45 + 0.55 * clamp01((clearingEdge(x, z) - 1) / 0.4)
-	return SOIL_TOP + h, bright
+-- A frame at `pos` whose up vector is `up`.
+local function frameUp(pos, up)
+	up = up.Unit
+	local x = up:Cross(V3(0, 0, 1))
+	if x.Magnitude < 0.1 then
+		x = up:Cross(V3(1, 0, 0))
+	end
+	x = x.Unit
+	return CFrame.fromMatrix(pos, x, up, x:Cross(up).Unit)
+end
+
+local PETAL_P = { Reflectance = 0.1 } -- buttercup petals are famously glossy
+local LEAF_P = { Reflectance = 0.03 }
+
+-- An open buttercup facing `up`, `r` studs across its petals' reach. Each petal has a
+-- narrow, greener base and a broad, glossy blade that turns up more steeply, so together
+-- they make the buttercup's bowl. Stamens ring a green knot of pistils in the middle.
+local function buttercup(parent, pos, up, r, color)
+	local fcf = frameUp(pos, up) * ANG(0, rand() * TAU, 0)
+	local stage = rand()
+	local base = rr(0.25, 0.45)
+	local tip = base + rr(0.3, 0.5)
+	if stage < 0.15 then -- still opening
+		base = rr(0.55, 0.75)
+		tip = base + rr(0.25, 0.4)
+	elseif stage < 0.25 then -- wide open and going over
+		base = rr(0.05, 0.2)
+		tip = base + rr(0.1, 0.25)
+	end
+	local petals = if stage > 0.96 then 3 elseif stage > 0.92 then 4 else 5
+	local claw = mix(color, C.petalBase, 0.45)
+	for i = 0, petals - 1 do
+		local arm = fcf * ANG(0, i * TAU / 5 + rr(-0.1, 0.1), 0)
+		local b, t = base + rr(-0.08, 0.08), tip + rr(-0.1, 0.1)
+		local bl = r * 0.5
+		ellipsoid(parent, arm * ANG(b, 0, 0) * CF(0, 0, -bl * 0.5 - r * 0.1), V3(r * 0.64, r * 0.07, bl * 1.15), jitter(claw, 0.05), PETAL_P)
+		local hinge = arm * ANG(b, 0, 0) * CF(0, 0, -bl * 0.85 - r * 0.1)
+		local wl, ww = r * rr(0.74, 0.84), r * rr(1.02, 1.14)
+		ellipsoid(parent, hinge * ANG(t - b, 0, 0) * CF(0, 0, -wl * 0.42), V3(ww, r * 0.06, wl), jitter(color, 0.05), PETAL_P)
+	end
+	local ring = disc(parent, fcf * CF(0, r * 0.05, 0), r * 0.62, r * 0.16, jitter(C.stamens, 0.06), M.SmoothPlastic, {})
+	if CARDS.stamens then
+		decal(ring, CARDS.stamens, Enum.NormalId.Right)
+	end
+	local k = r * 0.32
+	part(parent, fcf * CF(0, r * 0.14, 0), V3(k, k, k), jitter(C.pistil, 0.08), M.SmoothPlastic, BALL_P)
+end
+
+-- A closed bud, its petals still held in by three green sepals.
+local function bud(parent, pos, up, r)
+	local fcf = frameUp(pos, up) * ANG(0, rand() * TAU, 0)
+	ellipsoid(parent, fcf * CF(0, r * 0.35, 0), V3(r * 0.55, r * 0.75, r * 0.55), jitter(mix(C.petal, C.pistil, 0.25), 0.06), PETAL_P)
+	for i = 0, 2 do
+		local arm = fcf * ANG(0, i * TAU / 3 + rr(-0.2, 0.2), 0)
+		ellipsoid(parent, arm * CF(0, r * 0.22, -r * 0.24) * ANG(0.3, 0, 0), V3(r * 0.3, r * 0.6, r * 0.08), jitter(C.sepal, 0.08), LEAF_P)
+	end
+end
+
+-- A basal leaf: three broad lobes spreading from the stalk, lifted a little off the soil.
+local function basalLeaf(parent, base, yaw, len)
+	local lcf = CF(base) * ANG(0, yaw, 0) * ANG(rr(0.12, 0.35), 0, 0)
+	local col = jitter(C.leafDeep, 0.1)
+	for _, lobe in { { 0, 1.0 }, { 0.95, 0.78 }, { -0.95, 0.78 } } do
+		local l = len * lobe[2]
+		local tone = if lobe[1] == 0 then col else shade(col, rr(0.9, 1.06))
+		ellipsoid(parent, lcf * ANG(0, lobe[1], 0) * CF(0, 0, -l * 0.5 - len * 0.12), V3(l * 0.62, 0.05, l), tone, LEAF_P)
+	end
 end
 
 local function leaf(parent, base, yaw, len, lift)
 	local cf = CF(base) * ANG(0, yaw, 0) * ANG(lift or rr(0.35, 0.7), 0, 0) * CF(0, 0, -len / 2)
-	ellipsoid(parent, cf, V3(len * 0.38, 0.06, len), jitter(C.leaf, 0.12))
+	ellipsoid(parent, cf, V3(len * 0.3, 0.05, len), jitter(C.leaf, 0.12), LEAF_P)
 end
 
--- A buttercup: five glossy petals cupped around a ring of stamens and a green knot of
--- pistils, on a stem of its own. Petals vary a little, as real ones do.
-local PETAL_P = { Reflectance = 0.08 } -- buttercup petals are famously glossy
-local function flower(parent, pos, headR, petalColor, centerColor, stemFrom)
-	local tiltX, tiltZ = rr(-0.3, 0.3), rr(-0.3, 0.3)
-	local cup = rr(0.4, 0.7)
-	local petals = 5
-	local kind = rand()
-	if kind < 0.07 then -- a bud, nearly closed
-		cup = rr(1.15, 1.35)
-		headR *= 0.62
-	elseif kind < 0.2 then -- turned toward the light
-		tiltX = rr(0.45, 0.8) * (if rand() < 0.5 then -1 else 1)
-	elseif kind < 0.24 then -- going over, with a petal gone
-		petals = 4
+-- A whole buttercup plant: a rosette of leaves on the soil and a stem that branches into
+-- one to three flowers and perhaps a bud, leaning out and toward the window's light.
+local function buttercupPlant(parent, x, z, bright, mound, color)
+	local root = V3(x, SOIL_TOP, z)
+	if CARDS.leaves then
+		for i = 1, 2 do
+			local g = rr(0.8, 1.0)
+			local size = rr(2.6, 3.6)
+			local card = part(parent, CF(root + V3(0, 0.12 * i, 0)) * ANG(0, rand() * TAU, 0) * ANG(rr(0.06, 0.22), 0, 0), V3(size, 0.05, size), C.leaf, M.SmoothPlastic, CARD_P)
+			decal(card, CARDS.leaves, Enum.NormalId.Top, Color3.new(g, g, g))
+		end
+	else
+		local n = 2
+		local turn = rand() * TAU
+		for i = 1, n do
+			basalLeaf(parent, root + V3(0, 0.06 * i, 0), turn + i * TAU / n + rr(-0.4, 0.4), rr(0.8, 1.25))
+		end
 	end
-	local fcf = CF(pos) * ANG(tiltX, rand() * TAU, tiltZ)
-	local turn = rand() * TAU
-	for i = 0, petals - 1 do
-		local len, wid = headR * rr(0.95, 1.08), headR * rr(0.82, 0.95)
-		local pcf = fcf * ANG(0, turn + i * TAU / 5 + rr(-0.08, 0.08), 0) * ANG(cup + rr(-0.12, 0.12), 0, 0) * CF(0, 0, -len * 0.5 - headR * 0.08)
-		ellipsoid(parent, pcf, V3(wid, headR * 0.09, len), jitter(petalColor, 0.05), PETAL_P)
+	local heads = 1 + (if rand() < 0.35 + 0.5 * bright then 1 else 0) + (if rand() < 0.2 + 0.4 * bright then 1 else 0)
+	local buds = if rand() < 0.55 then 1 else 0
+	local lift = 0.6 * mound
+	local fork = root + V3(rr(-0.15, 0.15), rr(0.5, 0.8) + lift * 0.5, rr(-0.15, 0.15))
+	cylBetween(parent, root, fork, 0.13, jitter(C.stem, 0.08), M.SmoothPlastic)
+	if rand() < 0.6 then -- a narrow leaf where the stem branches
+		leaf(parent, fork, rand() * TAU, rr(0.6, 0.9), rr(0.5, 0.9))
 	end
-	disc(parent, fcf * CF(0, 0.03, 0), headR * 0.46, headR * 0.14, centerColor, M.SmoothPlastic, {})
-	local knot = headR * 0.24
-	part(parent, fcf * CF(0, headR * 0.09, 0), V3(knot, knot, knot), jitter(C.pistil, 0.08), M.SmoothPlastic, BALL_P)
-	if stemFrom then
-		local top = (fcf * CF(0, -headR * 0.12, 0)).Position
-		cylBetween(parent, stemFrom, top, rr(0.09, 0.13), jitter(C.stem, 0.1), M.SmoothPlastic)
-		if rand() < 0.2 then -- a leaf partway up the stem
-			leaf(parent, stemFrom:Lerp(top, rr(0.35, 0.6)), rand() * TAU, headR * rr(1.0, 1.4), rr(0.7, 1.0))
+	local toLight = V3(WIN.x - x, 0, -z).Unit
+	for i = 1, heads + buds do
+		local isBud = i > heads
+		local ang = rand() * TAU
+		local spread = rr(0.3, 1.1)
+		local h = rr(1.0, 2.0) + lift - (if isBud then 0.25 else 0)
+		local head = V3(x + cos(ang) * spread, SOIL_TOP + h, z + sin(ang) * spread)
+		local up = (V3(cos(ang) * 0.35, 1, sin(ang) * 0.35) + toLight * rr(0, 0.55)).Unit
+		local r = if isBud then rr(0.5, 0.66) else rr(0.7, 0.9) + 0.2 * bright
+		cylBetween(parent, fork, head - up * (r * 0.1), rr(0.08, 0.11), jitter(C.stem, 0.08), M.SmoothPlastic)
+		if isBud then
+			bud(parent, head, up, r)
+		else
+			buttercup(parent, head, up, r, color)
 		end
 	end
 end
@@ -1051,7 +1124,6 @@ end
 local function buildFlowerBed(room)
 	local bed = model("FlowerBed", room)
 	local ground = model("Ground", bed, "Folder")
-	local foliage = model("Foliage", bed, "Folder")
 	local flowers = model("Flowers", bed, "Folder")
 
 	-- soil: overlapping discs give the bed a soft, uneven outline
@@ -1087,51 +1159,38 @@ local function buildFlowerBed(room)
 		ellipsoid(flowers, CF(px, 0.47, pz) * ANG(rr(-0.15, 0.15), rand() * TAU, rr(-0.15, 0.15)), V3(size * 0.85, 0.06, size), jitter(C.petalDim, 0.08), PETAL_P)
 	end
 
-	-- low leafy mounds under the flowers (the terrain grass grows up through them)
-	for x = -BED.rx, BED.rx, 2.6 do
-		for z = BED.cz - BED.rz, BED.cz + BED.rz, 2.6 do
-			local px, pz = x + rr(-0.8, 0.8), z + rr(-0.8, 0.8)
-			if bedEdge(px, pz) < 0.98 and clearingEdge(px, pz) > 0.97 then
-				local top, bright = foliageTop(px, pz)
-				local r = rr(1.2, 1.9)
-				ball(foliage, V3(px, top - 0.1 - r, pz), 2 * r, jitter(mix(C.foliage, C.foliageBright, bright), 0.1), M.LeafyGrass, {})
-			end
-		end
-	end
-
-	-- flowers on a jittered hex grid; bright clusters are denser, taller and lighter
+	-- buttercup plants on a jittered hex grid; in the bright clusters they're denser,
+	-- taller, fuller and lighter
 	local s = CONFIG.FlowerSpacing
 	local row = 0
 	for z = BED.cz - BED.rz, BED.cz + BED.rz, s * 0.866 do
 		row += 1
 		for x = -BED.rx + (row % 2) * s * 0.5, BED.rx, s do
-			local px, pz = x + rr(-0.3, 0.3) * s, z + rr(-0.3, 0.3) * s
-			local e, ce = bedEdge(px, pz), clearingEdge(px, pz)
-			if e < 1 and ce > 1.04 then
-				local top, bright = foliageTop(px, pz)
-				local keep = 0.7 + 0.3 * bright
-				if e > 0.9 then
-					keep *= 0.75
-				end
-				if rand() < keep then
-					local headR = rr(0.55, 0.72) + (rr(0.66, 0.9) - 0.62) * bright
-					local lit = bright
-					if rand() < 0.12 then
-						lit = min(1, lit + 0.6)
+			for extra = 0, 1 do
+				local px, pz = x + rr(-0.35, 0.35) * s, z + rr(-0.35, 0.35) * s
+				local e, ce = bedEdge(px, pz), clearingEdge(px, pz)
+				if e < 0.98 and ce > 1.06 then
+					local bright, mound = clusterAt(px, pz)
+					local keep = if extra == 0 then 0.85 + 0.15 * bright else 0.85 * bright
+					if e > 0.9 then
+						keep *= 0.8
 					end
-					local petal = mix(mix(C.petalDeep, C.petalDim, rand()), mix(C.petal, C.petalBright, rand()), lit)
-					local center = mix(C.centerDim, C.center, lit)
-					local pos = V3(px, top + rr(0.15, 0.7) + 0.35 * bright, pz)
-					flower(flowers, pos, headR, petal, center, V3(px + rr(-0.3, 0.3), SOIL_TOP, pz + rr(-0.3, 0.3)))
+					if rand() < keep then
+						local lit = bright
+						if rand() < 0.12 then
+							lit = min(1, lit + 0.6)
+						end
+						local color = mix(mix(C.petalDeep, C.petalDim, rand()), mix(C.petal, C.petalBright, rand()), lit)
+						buttercupPlant(flowers, px, pz, bright, mound * clamp01((1 - e) / 0.18), color)
+					end
 				end
 			end
 		end
 	end
 
 	-- a few strays on the grass just outside the bed
-	local strays = 0
-	local tries = 0
-	while strays < 70 and tries < 2000 do
+	local strays, tries = 0, 0
+	while strays < 50 and tries < 2000 do
 		tries += 1
 		local ang = rand() * TAU
 		local r = rr(1.0, 1.16)
@@ -1139,10 +1198,7 @@ local function buildFlowerBed(room)
 		local e = bedEdge(px, pz)
 		if e > 1.02 and e < 1.2 and clearingEdge(px, pz) > 1.3 and pz > 11 then
 			strays += 1
-			local pos = V3(px, rr(0.8, 1.5), pz)
-			flower(flowers, pos, rr(0.5, 0.65), mix(C.petalDim, C.petal, rand()), C.center, V3(px, 0, pz))
-			leaf(flowers, V3(px, 0.15, pz), rand() * TAU, rr(0.9, 1.3))
-			leaf(flowers, V3(px, 0.25, pz), rand() * TAU, rr(0.8, 1.2))
+			buttercupPlant(flowers, px, pz, 0, 0, mix(C.petalDim, C.petal, rand()))
 		end
 	end
 
@@ -1442,8 +1498,7 @@ local function buildGrassTufts(room, bushes)
 		local x, z = rr(-BED.rx, BED.rx), rr(BED.cz - BED.rz, BED.cz + BED.rz)
 		if bedEdge(x, z) < 0.95 and clearingEdge(x, z) > 1.2 then
 			placed += 1
-			local top = foliageTop(x, z)
-			grassTuft(tufts, V3(x, top - 0.6, z), rr(1.8, 3.0), true)
+			grassTuft(tufts, V3(x, SOIL_TOP - 0.1, z), rr(1.8, 3.0), true)
 		end
 	end
 end
@@ -2353,6 +2408,8 @@ local function build()
 	CARDS.ivy = texture("ivy_card")
 	CARDS.grass = texture("grass_card")
 	CARDS.tallGrass = texture("tallgrass_card")
+	CARDS.leaves = texture("leaf_card")
+	CARDS.stamens = texture("stamen_card")
 	CARDS.grime = texture("grime_card")
 	CARDS.glass = texture("glass_card")
 

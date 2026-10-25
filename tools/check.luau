@@ -211,7 +211,7 @@ for _, d in room2:GetDescendants() do
 		textures += 1
 	end
 end
-check(textured > 2500, "parts use the textured materials (" .. textured .. ")")
+check(textured > 1500, "parts use the textured materials (" .. textured .. ")")
 check(decals > 1000, "ivy and grass cut-outs placed (" .. decals .. " decals)")
 check(textures > 50, "grime and glass textures placed (" .. textures .. ")")
 local wall = room2.Architecture.Walls:FindFirstChildWhichIsA("BasePart")

@@ -541,6 +541,88 @@ def tallgrass_card(n=512):
     img.resize((n, n), Image.LANCZOS).save(OUT / "tallgrass_card.png", optimize=True)
 
 
+def buttercup_leaf_polygon(cx, cy, size, angle, rng):
+    """A buttercup leaf: three deep lobes, each cut into toothed segments."""
+    lobes = [(0.0, 1.0), (0.9, 0.86), (-0.9, 0.86), (1.75, 0.5), (-1.75, 0.5)]
+    pts = []
+    steps = 160
+    for i in range(steps):
+        th = -math.pi + 2 * math.pi * i / steps
+        r = 0.26
+        for la, lr in lobes:
+            d = math.atan2(math.sin(th - la), math.cos(th - la))
+            r += (lr - 0.26) * math.exp(-(d / 0.42) ** 2)
+        r *= 1 + 0.09 * math.sin(th * 15 + rng.uniform(0, 0.3)) * (r > 0.4)  # toothed margin
+        if abs(abs(th) - math.pi) < 0.5:
+            r *= 0.4 + 0.6 * (abs(abs(th) - math.pi) / 0.5)
+        c, s = math.cos(angle), math.sin(angle)
+        px, py = r * math.cos(th) * size, r * math.sin(th) * size
+        pts.append((cx + px * c - py * s, cy + px * s + py * c))
+    tips = []
+    for la, lr in lobes[:3]:
+        c, s = math.cos(angle), math.sin(angle)
+        px, py = lr * math.cos(la) * size * 0.9, lr * math.sin(la) * size * 0.9
+        tips.append((cx + px * c - py * s, cy + px * s + py * c))
+    return pts, tips
+
+
+def leaf_card(n=512):
+    """A rosette of buttercup leaves seen from above, for laying over the soil."""
+    rng = np.random.default_rng(36)
+    s = 2
+    m = n * s
+    img = Image.new("RGBA", (m, m), (0, 0, 0, 0))
+    shadow = Image.new("RGBA", (m, m), (0, 0, 0, 0))
+    draw, sdraw = ImageDraw.Draw(img), ImageDraw.Draw(shadow)
+    leaves = [(i / 7 * 2 * math.pi, 0.2, 0.24) for i in range(7)]  # outer ring, then inner
+    leaves += [((i + 0.5) / 5 * 2 * math.pi, 0.09, 0.17) for i in range(5)]
+    for base_ang, reach, big in leaves:
+        ang = base_ang + rng.uniform(-0.25, 0.25)
+        dist = m * reach * rng.uniform(0.9, 1.1)
+        size = m * big * rng.uniform(0.9, 1.08)
+        cx, cy = m / 2 + math.cos(ang) * dist, m / 2 + math.sin(ang) * dist
+        poly, tips = buttercup_leaf_polygon(cx, cy, size, ang, rng)
+        sdraw.polygon([(x + 8 * s, y + 10 * s) for x, y in poly], fill=(0, 0, 0, 110))
+        g = rng.uniform(0.8, 1.15)
+        base = (int(48 * g), int(98 * g), int(38 * g), 255)
+        draw.line([(m / 2, m / 2), (cx, cy)], fill=(84, 112, 50, 255), width=4 * s)  # stalk
+        draw.polygon(poly, fill=base)
+        inner, _ = buttercup_leaf_polygon(cx, cy, size * 0.7, ang, rng)
+        draw.polygon(inner, fill=(int(base[0] * 1.1), int(base[1] * 1.12), int(base[2] * 1.06), 255))
+        stalk_end = (cx - math.cos(ang) * size * 0.15, cy - math.sin(ang) * size * 0.15)
+        for tx, ty in tips:
+            draw.line([stalk_end, (tx, ty)], fill=(124, 160, 92, 255), width=2 * s)
+    shadow = shadow.filter(ImageFilter.GaussianBlur(9 * s))
+    Image.alpha_composite(shadow, img).resize((n, n), Image.LANCZOS).save(OUT / "leaf_card.png", optimize=True)
+
+
+def stamen_card(n=256):
+    """The middle of a buttercup from above: a green knot of pistils in a ring of stamens."""
+    rng = np.random.default_rng(37)
+    s = 4
+    m = n * s
+    c = m / 2
+    img = Image.new("RGBA", (m, m), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img)
+    draw.ellipse([c - m * 0.44, c - m * 0.44, c + m * 0.44, c + m * 0.44], fill=(214, 160, 20, 255))
+    for i in range(90):  # filaments with anthers on their tips
+        a = rng.uniform(0, 2 * math.pi)
+        r0, r1 = m * 0.22, m * rng.uniform(0.36, 0.48)
+        x0, y0 = c + math.cos(a) * r0, c + math.sin(a) * r0
+        x1, y1 = c + math.cos(a) * r1, c + math.sin(a) * r1
+        draw.line([(x0, y0), (x1, y1)], fill=(236, 196, 52, 255), width=2 * s)
+        rad = rng.uniform(4, 6.5) * s
+        tone = rng.uniform(0.85, 1.05)
+        draw.ellipse([x1 - rad, y1 - rad, x1 + rad, y1 + rad], fill=(int(250 * tone), int(204 * tone), int(40 * tone), 255))
+    for i in range(70):  # the knot of green pistils, lighter toward the top left
+        a, rr_ = rng.uniform(0, 2 * math.pi), m * 0.17 * math.sqrt(rng.uniform(0, 1))
+        x, y = c + math.cos(a) * rr_, c + math.sin(a) * rr_
+        rad = rng.uniform(5, 8) * s
+        light = 1.0 + 0.25 * (-(x - c) - (y - c)) / (m * 0.2)
+        draw.ellipse([x - rad, y - rad, x + rad, y + rad], fill=(int(128 * light), int(156 * light), int(40 * light), 255))
+    img.resize((n, n), Image.LANCZOS).save(OUT / "stamen_card.png", optimize=True)
+
+
 def grime_card(n=512):
     """Dust and soot for the foot of a wall: dark at the bottom edge, with drips. Tiles
     left to right."""
@@ -586,6 +668,8 @@ MAKERS = {
     "ivy_card": ivy_card,
     "grass_card": grass_card,
     "tallgrass_card": tallgrass_card,
+    "leaf_card": leaf_card,
+    "stamen_card": stamen_card,
     "grime_card": grime_card,
     "glass_card": glass_card,
 }

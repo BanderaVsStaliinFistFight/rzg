@@ -4,12 +4,15 @@ A walk-in recreation of Asgore's throne room, built from Roblox parts, with its 
 PBR textures. With the textures uploaded (see [Textures](#textures); until then it uses
 Roblox's built-in materials), it has:
 
-- **Golden flower bed.** About 2,100 buttercups, laid out with the bright raised clusters
-  of the original room. Each has five glossy, cupped petals around a ring of stamens and
-  a green centre, on its own stem, and some have a leaf partway up. They vary: some are
-  buds, some turn toward the light, and a few have lost a petal. Low leafy mounds and
-  tall seeding grass grow between them. A dirt clearing holds the throne, with fallen
-  petals on it.
+- **Golden flower bed.** About 800 buttercup plants carrying some 1,550 flowers and 450
+  buds, packed densest in the bright clusters of the original room. Each plant has a
+  rosette of three-lobed leaves on the soil and a stem that forks into its flowers, with
+  a narrow leaf at the fork. Every flower has five glossy petals, each in two parts (a
+  narrow, greener base and a broad blade that turns up more steeply), so together they
+  make the buttercup's bowl, around a ring of stamens and a green knot of pistils. Buds
+  are held in green sepals. Flowers lean toward the window's light, and some are still
+  opening, some wide open and going over, a few missing a petal. Tall seeding grass grows
+  among them, and fallen petals lie on the dirt clearing that holds the throne.
 - **Asgore's throne.** A gilded throne with a reclined, arched back of diamond-buttoned
   purple velvet, pleated between the buttons. Its frame has reeded stiles, urn finials,
   beaded moldings, and a crest with Asgore's crown, gems, scrolls and acanthus leaves.
@@ -72,7 +75,7 @@ allowed to.
 ## Textures
 
 `textures/` holds 12 tileable PBR sets (colour, normal and roughness maps, plus metalness
-for gold) and five cut-outs:
+for gold) and seven cut-outs:
 
 | Set | Used for |
 |---|---|
@@ -80,8 +83,9 @@ for gold) and five cut-outs:
 | `woodplanks`, `wood` | ceiling and wainscot panels; beams and skirting |
 | `gold`, `velvet`, `linen` | the thrones and the dust sheet |
 | `terracotta`, `limestone`, `soil` | floor tiles; corridor slabs; flower bed and clearing |
-| `grass`, `leaves` | green floor; foliage, bushes and ivy mounds |
+| `grass`, `leaves` | green floor; bushes and ivy mounds |
 | `ivy_card` | ivy sprigs on the walls |
+| `leaf_card`, `stamen_card` | each buttercup plant's rosette of leaves; the stamens ringing each flower |
 | `grass_card`, `tallgrass_card` | dense tufts of grass; wispy grass going to seed |
 | `grime_card`, `glass_card` | dust above the wainscot and soot under the cornice; streaks in the window glass |
 
@@ -99,7 +103,7 @@ numpy and Pillow).
    python3 tools/upload_textures.py --api-key YOUR_KEY --user-id YOUR_USER_ID
    ```
 
-   It uploads the 42 images and writes their ids into the `TEXTURE_IDS` table at the top
+   It uploads the 44 images and writes their ids into the `TEXTURE_IDS` table at the top
    of `src/ThroneRoomBuilder.luau`. If it stops partway, run it again: it skips what's
    already uploaded.
 3. Paste `src/ThroneRoomBuilder.luau` into Studio's command bar and press Enter.
@@ -124,7 +128,7 @@ The settings are at the top of `src/ThroneRoomBuilder.luau`:
 |---|---|---|
 | `Origin` | `CFrame.new(0, 0, 0)` | Where the room goes. The back wall's inside face is at the origin, and the room runs toward +Z. |
 | `Seed` | `915` | Change it for a different flower and ivy layout. |
-| `FlowerSpacing` | `1.55` | Raise it to `1.9` for about a third fewer flower parts on slower devices. |
+| `FlowerSpacing` | `3.2` | Studs between buttercup plants. Raise it to `4` for about a third fewer flower parts on slower devices. |
 | `ApplyLighting` | `true` | Whether the builder sets Lighting and the post effects. |
 | `MusicId` | `""` | The numeric id of an audio asset you're allowed to use. It's stored as the model's `MusicId` attribute and played on loop. |
 | `TerrainGrass` | `true` | Whether to grow terrain grass on the green floor. |
@@ -134,8 +138,9 @@ effects are its children. Change them there.
 
 **Performance.** Flowers, ivy and other small details are anchored and don't collide,
 take touches or cast shadows. Walls, floors and furniture do. With textures there are
-about 24k parts, since ivy cut-outs replace most of the ivy mounds; without them, about
-29k. Most are flowers (about 17k) and the throne is about 580.
+about 30k parts, since cut-outs replace the ivy mounds and the leaves made of parts;
+without them, about 37k. Most are the buttercups (about 27k without textures) and the
+throne is about 580.
 
 ## Rebuild the files
 
