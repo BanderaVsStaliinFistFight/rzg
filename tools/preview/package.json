@@ -1,0 +1,9 @@
+{
+  "name": "throne-room-preview",
+  "private": true,
+  "description": "Approximate three.js previews of the throne room's parts",
+  "dependencies": {
+    "playwright": "1.48.2",
+    "three": "0.170.0"
+  }
+}

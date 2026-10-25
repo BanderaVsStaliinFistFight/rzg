@@ -1,0 +1,182 @@
+<!doctype html>
+<!-- Approximate preview of the room's parts with three.js; driven by shoot.js. -->
+<html><head><meta charset="utf-8"><style>html,body{margin:0;background:#000}</style></head>
+<body>
+<script type="importmap">{"imports":{"three":"./node_modules/three/build/three.module.js"}}</script>
+<script type="module">
+import * as THREE from 'three';
+
+const params = new URLSearchParams(location.search);
+const view = params.get('view') || 'entrance';
+const W = +(params.get('w') || 1280), H = +(params.get('h') || 720);
+const data = await (await fetch(params.get('data') || 'parts.json')).json();
+
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+renderer.setSize(W, H);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+document.body.appendChild(renderer.domElement);
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x000000);
+
+const topView = view === 'top';
+const ceilingCut = topView ? 30 : 1e9;
+
+// geometries (unit sized, Roblox conventions)
+const box = new THREE.BoxGeometry(1, 1, 1);
+const sphere = new THREE.SphereGeometry(0.5, 14, 10);
+const cyl = new THREE.CylinderGeometry(0.5, 0.5, 1, 16); cyl.rotateZ(-Math.PI / 2); // axis along X
+const wedge = new THREE.BufferGeometry();
+{
+  // Roblox wedge: profile in YZ with corners (-.5,-.5), (-.5,.5), (.5,.5) [y,z], extruded along X
+  const p = [];
+  const v = (x, y, z) => p.push(x, y, z);
+  const L = -0.5, R = 0.5;
+  // bottom (y=-.5)
+  v(L,-.5,-.5); v(R,-.5,-.5); v(R,-.5,.5);  v(L,-.5,-.5); v(R,-.5,.5); v(L,-.5,.5);
+  // back (z=.5)
+  v(L,-.5,.5); v(R,-.5,.5); v(R,.5,.5);  v(L,-.5,.5); v(R,.5,.5); v(L,.5,.5);
+  // slope from (y=-.5,z=-.5) to (y=.5,z=.5)
+  v(L,-.5,-.5); v(L,.5,.5); v(R,.5,.5);  v(L,-.5,-.5); v(R,.5,.5); v(R,-.5,-.5);
+  // sides
+  v(L,-.5,-.5); v(L,-.5,.5); v(L,.5,.5);
+  v(R,-.5,-.5); v(R,.5,.5); v(R,-.5,.5);
+  wedge.setAttribute('position', new THREE.Float32BufferAttribute(p, 3));
+  wedge.computeVertexNormals();
+}
+
+const groups = new Map();
+function groupFor(geomKey, matKey) {
+  const key = geomKey + '|' + matKey;
+  if (!groups.has(key)) groups.set(key, { geomKey, matKey, items: [] });
+  return groups.get(key);
+}
+
+for (const p of data.parts) {
+  if (p.transparency >= 0.99) continue;
+  const [x, y, z] = p.cf;
+  if (y > ceilingCut) continue;
+  let g = 'box';
+  if (p.class === 'WedgePart') g = 'wedge';
+  else if (p.mesh === 'Sphere' || p.shape === 'Ball') g = 'sphere';
+  else if (p.shape === 'Cylinder') g = 'cyl';
+  let m = 'std';
+  if (p.material === 'Neon') m = p.transparency > 0.01 ? 'neonT' + p.transparency.toFixed(2) : 'neon';
+  else if (p.material === 'Metal') m = 'metal';
+  else if (p.transparency > 0.01) m = 'trans' + p.transparency.toFixed(2);
+  groupFor(g, m).items.push(p);
+}
+
+const geoms = { box, sphere, cyl, wedge };
+const mat4 = new THREE.Matrix4();
+for (const { geomKey, matKey, items } of groups.values()) {
+  let material;
+  if (matKey.startsWith('neon')) {
+    const t = matKey === 'neon' ? 0 : parseFloat(matKey.slice(5));
+    material = new THREE.MeshBasicMaterial({ transparent: t > 0, opacity: 1 - t, depthWrite: t === 0 });
+  } else if (matKey === 'metal') {
+    material = new THREE.MeshStandardMaterial({ roughness: 0.35, metalness: 0.75 });
+  } else if (matKey.startsWith('trans')) {
+    const t = parseFloat(matKey.slice(5));
+    material = new THREE.MeshStandardMaterial({ roughness: 0.6, transparent: true, opacity: 1 - t, depthWrite: false });
+  } else {
+    material = new THREE.MeshStandardMaterial({ roughness: 0.85, metalness: 0 });
+  }
+  const mesh = new THREE.InstancedMesh(geoms[geomKey], material, items.length);
+  const col = new THREE.Color();
+  items.forEach((p, i) => {
+    const [x, y, z, r00, r01, r02, r10, r11, r12, r20, r21, r22] = p.cf;
+    let [sx, sy, sz] = p.size;
+    if (p.shape === 'Ball') { const d = Math.min(sx, sy, sz); sx = sy = sz = d; }
+    if (p.shape === 'Cylinder') { const d = Math.min(sy, sz); sy = sz = d; }
+    mat4.set(r00 * sx, r01 * sy, r02 * sz, x,
+             r10 * sx, r11 * sy, r12 * sz, y,
+             r20 * sx, r21 * sy, r22 * sz, z,
+             0, 0, 0, 1);
+    mesh.setMatrixAt(i, mat4);
+    col.setRGB(p.color[0], p.color[1], p.color[2], THREE.SRGBColorSpace);
+    if (matKey.startsWith('neon')) col.multiplyScalar(1.6);
+    mesh.setColorAt(i, col);
+  });
+  mesh.castShadow = !matKey.startsWith('neon') && !matKey.startsWith('trans');
+  mesh.receiveShadow = true;
+  scene.add(mesh);
+}
+
+// lighting approximating the Roblox setup
+scene.add(new THREE.AmbientLight(new THREE.Color().setRGB(92/255, 72/255, 50/255, THREE.SRGBColorSpace), 2.2));
+scene.add(new THREE.HemisphereLight(0xffe0b0, 0x403020, 0.6));
+const sunToward = new THREE.Vector3(0.28, 0.8, -1).normalize();
+const sun = new THREE.DirectionalLight(0xffd9a0, 4.0);
+sun.position.copy(new THREE.Vector3(9, 24, 0).add(sunToward.clone().multiplyScalar(120)));
+sun.target.position.set(9 - 0.28 * 30, 0, 30);
+sun.castShadow = true;
+sun.shadow.mapSize.set(4096, 4096);
+sun.shadow.camera.left = -80; sun.shadow.camera.right = 80; sun.shadow.camera.top = 80; sun.shadow.camera.bottom = -80;
+sun.shadow.camera.near = 1; sun.shadow.camera.far = 400;
+sun.shadow.bias = -0.0006;
+scene.add(sun); scene.add(sun.target);
+for (const l of data.lights) {
+  const [x, y, z] = l.cf;
+  const c = new THREE.Color().setRGB(l.color[0], l.color[1], l.color[2], THREE.SRGBColorSpace);
+  if (l.class === 'PointLight') {
+    const pl = new THREE.PointLight(c, l.brightness * 30, l.range, 2);
+    pl.position.set(x, y, z); scene.add(pl);
+  } else if (l.class === 'SurfaceLight' && l.face === 'Bottom') {
+    const pl = new THREE.PointLight(c, l.brightness * 900, l.range * 1.5, 2);
+    pl.position.set(x, y, z); scene.add(pl);
+  }
+}
+
+// beams as additive cones
+for (const b of data.beams) {
+  const a = new THREE.Vector3(...b.a), e = new THREE.Vector3(...b.b);
+  const len = a.distanceTo(e);
+  const g = new THREE.CylinderGeometry(b.w0 / 2, b.w1 / 2, len, 24, 1, true);
+  const m = new THREE.MeshBasicMaterial({ color: new THREE.Color(...b.color), transparent: true, opacity: b.alpha * 0.9, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
+  const mesh = new THREE.Mesh(g, m);
+  mesh.position.copy(a.clone().add(e).multiplyScalar(0.5));
+  mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, -1, 0), e.clone().sub(a).normalize());
+  if (!topView) scene.add(mesh);
+}
+
+let camera;
+const views = {
+  entrance: null,
+  throne: [[-1, 9, 54], [-1, 10, 26]],
+  window: [[-12, 12, 38], [8, 22, 0]],
+  side: [[34, 16, 76], [-6, 8, 18]],
+  low: [[10, 3.5, 52], [-2, 6, 26]],
+  corridor: [[0, 6, 186], [0, 10, 60]],
+  back: [[-10, 20, 8], [5, 4, 80]],
+  covered: [[34, 9, 30], [22, 7, 7]],
+  winclose: [[9, 22, 21], [9, 24, 0]],
+  rune: [[9, 29.5, 9], [9, 29.5, 0]],
+  star: [[0.5, 5.5, 13], [2.5, 3.4, 4.5]],
+  bush: [[-6, 9, 100], [-20, 2, 125]],
+};
+if (topView) {
+  // same framing as the reference sprite: x = (px-111.5)/2, z = (py-82)/2
+  camera = new THREE.OrthographicCamera(-55.75, 54.25, 41, -165.5, 0.1, 500);
+  camera.position.set(0, 200, 0);
+  camera.up.set(0, 0, -1);
+  camera.lookAt(0, 0, 0);
+} else {
+  camera = new THREE.PerspectiveCamera(70, W / H, 0.1, 1000);
+  if (view === 'entrance') {
+    const c = data.camera;
+    camera.position.set(c[0], c[1], c[2]);
+    const m = new THREE.Matrix4().set(c[3], c[4], c[5], 0, c[6], c[7], c[8], 0, c[9], c[10], c[11], 0, 0, 0, 0, 1);
+    camera.quaternion.setFromRotationMatrix(m);
+  } else {
+    const [eye, at] = views[view];
+    camera.position.set(...eye);
+    camera.lookAt(...at);
+  }
+}
+renderer.render(scene, camera);
+window.__done = true;
+</script>
+</body></html>
