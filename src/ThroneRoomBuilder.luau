@@ -30,7 +30,7 @@
 local CONFIG = {
 	Origin = CFrame.new(0, 0, 0), -- where room space (0, 0, 0) sits in the world
 	Seed = 915, -- change it for a different flower and ivy layout
-	FlowerSpacing = 1.45, -- smaller means more flowers (and more parts)
+	FlowerSpacing = 1.55, -- smaller means more flowers (and more parts)
 	ApplyLighting = true, -- set Lighting and post effects for the room
 	MoveCamera = true, -- command bar only: frame the room after building
 	ReplaceExisting = true, -- delete an earlier AsgoreThroneRoom in Workspace first
@@ -62,9 +62,6 @@ local TEXTURE_IDS = {
 	linen_color = "",
 	linen_normal = "",
 	linen_roughness = "",
-	petal_color = "",
-	petal_normal = "",
-	petal_roughness = "",
 	plaster_color = "",
 	plaster_normal = "",
 	plaster_roughness = "",
@@ -74,6 +71,7 @@ local TEXTURE_IDS = {
 	soil_color = "",
 	soil_normal = "",
 	soil_roughness = "",
+	tallgrass_card = "",
 	terracotta_color = "",
 	terracotta_normal = "",
 	terracotta_roughness = "",
@@ -159,6 +157,8 @@ local C = {
 	centerDim = RGB(170, 140, 28),
 	stem = RGB(70, 108, 34),
 	leaf = RGB(62, 112, 40),
+	pistil = RGB(150, 166, 44), -- the green knot at the heart of a buttercup
+	blade = { RGB(58, 104, 40), RGB(74, 120, 46), RGB(46, 88, 36), RGB(92, 132, 52), RGB(128, 134, 66) },
 	ivy = { RGB(30, 76, 46), RGB(38, 92, 52), RGB(26, 62, 40), RGB(50, 104, 56), RGB(42, 84, 38) },
 	ivyLeaf = { RGB(52, 112, 58), RGB(66, 126, 62), RGB(44, 98, 50), RGB(78, 134, 60) },
 	berry = RGB(234, 152, 38),
@@ -274,7 +274,6 @@ local MATERIAL_SETS = {
 	limestone = { base = M.Slate, tile = 6, organic = true },
 	soil = { base = M.Ground, tile = 6, organic = true },
 	grass = { base = M.LeafyGrass, tile = 8, organic = true },
-	petal = { base = M.SmoothPlastic, tile = 2 },
 	leaves = { base = M.LeafyGrass, tile = 3, organic = true },
 }
 local VARIANT = {} -- set name -> MaterialVariant name, for the sets that were created
@@ -1004,37 +1003,49 @@ local function foliageTop(x, z)
 	local e = bedEdge(x, z)
 	local bright, mound = clusterAt(x, z)
 	local edge = clamp01((1 - e) / 0.18)
-	local h = (0.55 + 0.45 * edge) + mound * edge + 0.3 * noise2(x * 0.35, z * 0.35)
+	local h = (0.3 + 0.3 * edge) + 0.7 * mound * edge + 0.25 * noise2(x * 0.35, z * 0.35)
 	h *= 0.45 + 0.55 * clamp01((clearingEdge(x, z) - 1) / 0.4)
 	return SOIL_TOP + h, bright
 end
 
-local PETAL_P = { Shape = CYL, Variant = "petal", Reflectance = 0.05 } -- buttercups are glossy
-local function flower(parent, pos, headR, petalColor, centerColor, stemFrom)
-	local tiltX, tiltZ = rr(-0.28, 0.28), rr(-0.28, 0.28)
-	local cup = rr(0.35, 0.62)
-	local kind = rand()
-	if kind < 0.07 then -- a bud, nearly closed
-		cup = rr(1.05, 1.3)
-		headR *= 0.7
-	elseif kind < 0.2 then -- turned toward the light
-		tiltX = rr(0.45, 0.8) * (if rand() < 0.5 then -1 else 1)
-	end
-	local fcf = CF(pos) * ANG(tiltX, rand() * TAU, tiltZ)
-	local d = headR * 1.15
-	for i = 0, 4 do
-		local pcf = fcf * ANG(0, i * TAU / 5, 0) * CF(0, 0, -headR * 0.5) * ANG(cup, 0, 0) * ANG(0, 0, PI / 2)
-		part(parent, pcf, V3(0.07, d, d), jitter(petalColor, 0.04), M.SmoothPlastic, PETAL_P)
-	end
-	part(parent, fcf * CF(0, 0.02, 0), V3(headR * 0.34, headR * 0.34, headR * 0.34), centerColor, M.SmoothPlastic, BALL_P)
-	if stemFrom then
-		cylBetween(parent, stemFrom, pos - fcf.UpVector * 0.1, 0.14, C.stem, M.SmoothPlastic)
-	end
+local function leaf(parent, base, yaw, len, lift)
+	local cf = CF(base) * ANG(0, yaw, 0) * ANG(lift or rr(0.35, 0.7), 0, 0) * CF(0, 0, -len / 2)
+	ellipsoid(parent, cf, V3(len * 0.38, 0.06, len), jitter(C.leaf, 0.12))
 end
 
-local function leaf(parent, base, yaw, len)
-	local cf = CF(base) * ANG(0, yaw, 0) * ANG(rr(0.35, 0.7), 0, 0) * CF(0, 0, -len / 2)
-	ellipsoid(parent, cf, V3(len * 0.42, 0.08, len), jitter(C.leaf, 0.1))
+-- A buttercup: five glossy petals cupped around a ring of stamens and a green knot of
+-- pistils, on a stem of its own. Petals vary a little, as real ones do.
+local PETAL_P = { Reflectance = 0.08 } -- buttercup petals are famously glossy
+local function flower(parent, pos, headR, petalColor, centerColor, stemFrom)
+	local tiltX, tiltZ = rr(-0.3, 0.3), rr(-0.3, 0.3)
+	local cup = rr(0.4, 0.7)
+	local petals = 5
+	local kind = rand()
+	if kind < 0.07 then -- a bud, nearly closed
+		cup = rr(1.15, 1.35)
+		headR *= 0.62
+	elseif kind < 0.2 then -- turned toward the light
+		tiltX = rr(0.45, 0.8) * (if rand() < 0.5 then -1 else 1)
+	elseif kind < 0.24 then -- going over, with a petal gone
+		petals = 4
+	end
+	local fcf = CF(pos) * ANG(tiltX, rand() * TAU, tiltZ)
+	local turn = rand() * TAU
+	for i = 0, petals - 1 do
+		local len, wid = headR * rr(0.95, 1.08), headR * rr(0.82, 0.95)
+		local pcf = fcf * ANG(0, turn + i * TAU / 5 + rr(-0.08, 0.08), 0) * ANG(cup + rr(-0.12, 0.12), 0, 0) * CF(0, 0, -len * 0.5 - headR * 0.08)
+		ellipsoid(parent, pcf, V3(wid, headR * 0.09, len), jitter(petalColor, 0.05), PETAL_P)
+	end
+	disc(parent, fcf * CF(0, 0.03, 0), headR * 0.46, headR * 0.14, centerColor, M.SmoothPlastic, {})
+	local knot = headR * 0.24
+	part(parent, fcf * CF(0, headR * 0.09, 0), V3(knot, knot, knot), jitter(C.pistil, 0.08), M.SmoothPlastic, BALL_P)
+	if stemFrom then
+		local top = (fcf * CF(0, -headR * 0.12, 0)).Position
+		cylBetween(parent, stemFrom, top, rr(0.09, 0.13), jitter(C.stem, 0.1), M.SmoothPlastic)
+		if rand() < 0.2 then -- a leaf partway up the stem
+			leaf(parent, stemFrom:Lerp(top, rr(0.35, 0.6)), rand() * TAU, headR * rr(1.0, 1.4), rr(0.7, 1.0))
+		end
+	end
 end
 
 local function buildFlowerBed(room)
@@ -1072,12 +1083,13 @@ local function buildFlowerBed(room)
 	for _ = 1, 45 do -- fallen petals on the dirt
 		local ang, r = rand() * TAU, sqrt(rand())
 		local px, pz = CLEARING.cx + cos(ang) * r * CLEARING.rx * 0.9, CLEARING.cz + sin(ang) * r * CLEARING.rz * 0.9
-		disc(flowers, CF(px, 0.47, pz) * ANG(rr(-0.15, 0.15), rand() * TAU, rr(-0.15, 0.15)), rr(0.45, 0.7), 0.05, jitter(C.petalDim, 0.08), M.SmoothPlastic, {})
+		local size = rr(0.5, 0.75)
+		ellipsoid(flowers, CF(px, 0.47, pz) * ANG(rr(-0.15, 0.15), rand() * TAU, rr(-0.15, 0.15)), V3(size * 0.85, 0.06, size), jitter(C.petalDim, 0.08), PETAL_P)
 	end
 
-	-- leafy mounds under the flowers
-	for x = -BED.rx, BED.rx, 2.3 do
-		for z = BED.cz - BED.rz, BED.cz + BED.rz, 2.3 do
+	-- low leafy mounds under the flowers (the terrain grass grows up through them)
+	for x = -BED.rx, BED.rx, 2.6 do
+		for z = BED.cz - BED.rz, BED.cz + BED.rz, 2.6 do
 			local px, pz = x + rr(-0.8, 0.8), z + rr(-0.8, 0.8)
 			if bedEdge(px, pz) < 0.98 and clearingEdge(px, pz) > 0.97 then
 				local top, bright = foliageTop(px, pz)
@@ -1109,12 +1121,8 @@ local function buildFlowerBed(room)
 					end
 					local petal = mix(mix(C.petalDeep, C.petalDim, rand()), mix(C.petal, C.petalBright, rand()), lit)
 					local center = mix(C.centerDim, C.center, lit)
-					local pos = V3(px, top + rr(0.05, 0.45), pz)
-					local stem = nil
-					if e > 0.82 or ce < 1.35 then
-						stem = V3(px, SOIL_TOP, pz)
-					end
-					flower(flowers, pos, headR, petal, center, stem)
+					local pos = V3(px, top + rr(0.15, 0.7) + 0.35 * bright, pz)
+					flower(flowers, pos, headR, petal, center, V3(px + rr(-0.3, 0.3), SOIL_TOP, pz + rr(-0.3, 0.3)))
 				end
 			end
 		end
@@ -1348,15 +1356,26 @@ local function buildGrime(room)
 	end
 end
 
--- A tuft of tall grass: two crossed cut-outs, showing from both sides.
-local function grassTuft(parent, pos, h)
+-- A tuft of grass. With the grass textures uploaded: three crossed cut-outs that show
+-- from both sides (`tall` picks the wispy, seeding kind). Without them: a few blades,
+-- each a thin wedge leaning out from the root.
+local function grassTuft(parent, pos, h, tall)
+	local id = if tall then CARDS.tallGrass or CARDS.grass else CARDS.grass
 	local yaw = rand() * PI
-	local g = rr(0.75, 1.0)
-	for i = 0, 1 do
-		local cf = CF(pos + V3(0, h / 2 - 0.15, 0)) * ANG(0, yaw + i * PI / 2, 0)
-		local p = part(parent, cf, V3(h * 1.1, h, 0.05), C.grass, M.SmoothPlastic, CARD_P)
-		decal(p, CARDS.grass, Enum.NormalId.Front, Color3.new(g, g, g))
-		decal(p, CARDS.grass, Enum.NormalId.Back, Color3.new(g, g, g))
+	if id then
+		local g = rr(0.75, 1.0)
+		for i = 0, 2 do
+			local cf = CF(pos + V3(0, h / 2 - 0.15, 0)) * ANG(0, yaw + i * PI / 3, 0)
+			local p = part(parent, cf, V3(h * 1.1, h, 0.05), C.grass, M.SmoothPlastic, CARD_P)
+			decal(p, id, Enum.NormalId.Front, Color3.new(g, g, g))
+			decal(p, id, Enum.NormalId.Back, Color3.new(g, g, g))
+		end
+		return
+	end
+	for i = 1, 5 do
+		local bh = h * rr(0.55, 1.0)
+		local cf = CF(pos + V3(rr(-0.25, 0.25), -0.1, rr(-0.25, 0.25))) * ANG(0, yaw + i * 1.3 + rr(-0.3, 0.3), 0) * ANG(rr(-0.45, 0.15), 0, 0) * CF(0, bh / 2, 0)
+		part(parent, cf, V3(0.05, bh, rr(0.16, 0.26)), jitter(pick(C.blade), 0.08), M.SmoothPlastic, { Class = "WedgePart" })
 	end
 end
 
@@ -1371,6 +1390,7 @@ end
 
 local function buildGrassTufts(room, bushes)
 	local tufts = model("GrassTufts", room, "Folder")
+	local cut = CARDS.grass ~= nil
 	-- along the foot of the side walls
 	for z = 12, STEPS[3].z - 2, 2.2 do
 		local hw = hallHalfWidth(z)
@@ -1398,13 +1418,39 @@ local function buildGrassTufts(room, bushes)
 		for i = 1, 14 do
 			local ang = i / 14 * TAU + rr(-0.2, 0.2)
 			local r = rr(0.95, 1.1)
-			grassTuft(tufts, V3(b.x + cos(ang) * b.rx * r, 0, b.z + sin(ang) * b.rz * r), rr(1.2, 2.4))
+			grassTuft(tufts, V3(b.x + cos(ang) * b.rx * r, 0, b.z + sin(ang) * b.rz * r), rr(1.2, 2.4), rand() < 0.4)
+		end
+	end
+	if not cut then
+		return -- the terrain grass covers the rest; blades made of parts would be too many
+	end
+	-- clumps across the open grass, and tall seeding grass among the flowers
+	placed, tries = 0, 0
+	while placed < 120 and tries < 4000 do
+		tries += 1
+		local z = rr(12, STEPS[3].z - 2)
+		local hw = hallHalfWidth(z) - 1.5
+		local x = rr(-hw, hw)
+		if bedEdge(x, z) > 1.12 then
+			placed += 1
+			grassTuft(tufts, V3(x, 0, z), rr(0.9, 2.0), rand() < 0.3)
+		end
+	end
+	placed, tries = 0, 0
+	while placed < 90 and tries < 4000 do
+		tries += 1
+		local x, z = rr(-BED.rx, BED.rx), rr(BED.cz - BED.rz, BED.cz + BED.rz)
+		if bedEdge(x, z) < 0.95 and clearingEdge(x, z) > 1.2 then
+			placed += 1
+			local top = foliageTop(x, z)
+			grassTuft(tufts, V3(x, top - 0.6, z), rr(1.8, 3.0), true)
 		end
 	end
 end
 
--- Terrain grass for the green floor, as strips {x0, x1, z} two studs deep. Terrain isn't
--- in the place file Lune writes, so the plan is saved and ThroneRoomServer grows it there.
+-- Terrain grass for the whole floor of the hall, flower bed included, but not the dirt
+-- round the throne: strips {x0, x1, z} two studs deep. Terrain isn't in the place file
+-- Lune writes, so the plan is saved and ThroneRoomServer grows it there.
 local TERRAIN_GRASS = RGB(74, 106, 48)
 local function terrainStrips()
 	local strips = {}
@@ -1413,7 +1459,7 @@ local function terrainStrips()
 		local start = nil
 		local x = -hw
 		while x <= hw + 1e-6 do
-			local open = bedEdge(x, z) > 1.06
+			local open = clearingEdge(x, z) > 1.15
 			if open and not start then
 				start = x
 			end
@@ -1446,7 +1492,7 @@ local function growTerrain(strips)
 		terrain:SetMaterialColor(Enum.Material.Grass, TERRAIN_GRASS)
 	end)
 	trySet(terrain, "Decoration", true)
-	trySet(terrain, "GrassLength", 0.7)
+	trySet(terrain, "GrassLength", 1)
 	return ok
 end
 
@@ -2306,6 +2352,7 @@ local function build()
 	buildMaterialVariants()
 	CARDS.ivy = texture("ivy_card")
 	CARDS.grass = texture("grass_card")
+	CARDS.tallGrass = texture("tallgrass_card")
 	CARDS.grime = texture("grime_card")
 	CARDS.glass = texture("glass_card")
 
@@ -2333,9 +2380,7 @@ local function build()
 	if CARDS.grime then
 		buildGrime(room)
 	end
-	if CARDS.grass then
-		buildGrassTufts(room, BUSHES)
-	end
+	buildGrassTufts(room, BUSHES)
 	local thrones = model("Thrones", room)
 	buildAsgoreThrone(thrones)
 	buildCoveredThrone(thrones)

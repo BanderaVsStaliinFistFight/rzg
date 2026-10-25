@@ -343,19 +343,6 @@ def grass_ground(n=512):
     save_set("grass", color, height, rough, 5.0)
 
 
-def petal(n=512):
-    rng = np.random.default_rng(22)
-    d1, d2, _ = worley(n, 48, rng)
-    cells = np.clip((d2 - d1) * 3, 0, 1)
-    streak = spectral(n, rng, 1.6, fmin=0.01, fmax=0.25, stretch=(1.0, 12.0))
-    sheen = spectral(n, rng, 2.8, fmax=0.04)
-    shade = 0.9 + 0.04 * (cells - 0.5) + 0.05 * (streak - 0.5) + 0.05 * (sheen - 0.5)
-    color = shade[..., None] * np.array([1.0, 0.99, 0.93])[None, None, :]
-    height = 0.2 * cells + 0.25 * streak
-    rough = 0.55 + 0.1 * (1 - sheen) + 0.05 * (1 - cells)  # buttercups have a satin gloss
-    save_set("petal", color, height, rough, 1.5)
-
-
 def leaf_shape(draw, cx, cy, length, width, angle, fill, vein=None):
     """An almond-shaped leaf with a midrib."""
     pts = []
@@ -483,28 +470,75 @@ def ivy_card(n=1024):
     out.save(OUT / "ivy_card.png", optimize=True)
 
 
+def blade(draw, rng, root_x, root_y, height, width, lean, color, tip_light=1.15, segments=14):
+    """A curved, tapering grass blade, dark at the root and lighter toward the tip."""
+    pts = []
+    for i in range(segments + 1):
+        t = i / segments
+        x = root_x + lean * height * t * t
+        y = root_y - height * t * (1 - 0.18 * abs(lean) * t)
+        pts.append((x, y, width * (1 - t) ** 0.85 / 2))
+    for i in range(segments):
+        (x0, y0, w0), (x1, y1, w1) = pts[i], pts[i + 1]
+        t = (i + 0.5) / segments
+        shade = 0.45 + (tip_light - 0.45) * t ** 0.7
+        col = tuple(min(255, int(c * shade)) for c in color) + (255,)
+        dx, dy = x1 - x0, y1 - y0
+        length = math.hypot(dx, dy) or 1
+        nx, ny = -dy / length, dx / length
+        draw.polygon([(x0 + nx * w0, y0 + ny * w0), (x1 + nx * w1, y1 + ny * w1),
+                      (x1 - nx * w1, y1 - ny * w1), (x0 - nx * w0, y0 - ny * w0)], fill=col)
+    if width > 9:  # a pale midrib on the broader blades
+        mid = [(x, y) for x, y, _ in pts[: segments - 2]]
+        draw.line(mid, fill=tuple(min(255, int(c * 1.25)) for c in color) + (150,), width=2)
+
+
+GREENS = [(70, 130, 48), (84, 140, 52), (58, 116, 42), (96, 146, 60), (66, 122, 56)]
+STRAW = [(160, 150, 86), (176, 160, 96), (140, 128, 72)]
+
+
 def grass_card(n=512):
+    """A dense tuft: broad curved blades, a few gone dry."""
     rng = np.random.default_rng(32)
     s = 2
     img = Image.new("RGBA", (n * s, n * s), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
-    for _ in range(140):
-        x0 = n * s * (0.5 + rng.normal(0, 0.14))
-        height = n * s * rng.uniform(0.35, 0.95)
-        lean = rng.normal(0, 0.35)
-        width = rng.uniform(5, 11) * s
-        g = rng.uniform(0.55, 1.0)
-        col = (int(70 * g), int(130 * g), int(48 * g), 255)
-        pts_l, pts_r = [], []
-        for i in range(12):
-            t = i / 11
-            x = x0 + lean * height * t * t
-            y = n * s - height * t
-            w = width * (1 - t) ** 0.9 / 2
-            pts_l.append((x - w, y))
-            pts_r.append((x + w, y))
-        draw.polygon(pts_l + pts_r[::-1], fill=col)
+    for i in range(170):
+        dry = rng.random() < 0.08
+        color = STRAW[rng.integers(len(STRAW))] if dry else GREENS[rng.integers(len(GREENS))]
+        color = tuple(int(c * rng.uniform(0.8, 1.1)) for c in color)
+        blade(draw, rng, n * s * (0.5 + rng.normal(0, 0.13)), n * s * 1.02, n * s * rng.uniform(0.35, 0.95),
+              rng.uniform(6, 14) * s, rng.normal(0, 0.38), color)
     img.resize((n, n), Image.LANCZOS).save(OUT / "grass_card.png", optimize=True)
+
+
+def tallgrass_card(n=512):
+    """Wispy meadow grass going to seed: thin blades and a few stems with seed heads."""
+    rng = np.random.default_rng(35)
+    s = 2
+    img = Image.new("RGBA", (n * s, n * s), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img)
+    for i in range(110):
+        dry = rng.random() < 0.12
+        color = STRAW[rng.integers(len(STRAW))] if dry else GREENS[rng.integers(len(GREENS))]
+        blade(draw, rng, n * s * (0.5 + rng.normal(0, 0.1)), n * s * 1.02, n * s * rng.uniform(0.3, 0.75),
+              rng.uniform(4, 8) * s, rng.normal(0, 0.5), color)
+    for i in range(11):  # seeding stems
+        x0 = n * s * (0.5 + rng.normal(0, 0.1))
+        height = n * s * rng.uniform(0.7, 0.97)
+        lean = rng.normal(0, 0.25)
+        stem = [(x0 + lean * height * t * t, n * s * 1.02 - height * t) for t in np.linspace(0, 1, 16)]
+        draw.line(stem, fill=(118, 132, 64, 255), width=int(2.5 * s), joint="curve")
+        tan = STRAW[rng.integers(len(STRAW))]
+        for t in np.linspace(0.62, 1.0, 16):  # spikelets along the top of the stem
+            k = min(15, int(t * 15))
+            x, y = stem[k]
+            for side in (-1, 1):
+                ang = -math.pi / 2 + side * rng.uniform(0.25, 0.7)
+                length = rng.uniform(22, 36) * s * (1.25 - t)
+                cx, cy = x + math.cos(ang) * length / 2, y + math.sin(ang) * length / 2
+                leaf_shape(draw, cx, cy, length, length * 0.42, ang, tan + (255,))
+    img.resize((n, n), Image.LANCZOS).save(OUT / "tallgrass_card.png", optimize=True)
 
 
 def grime_card(n=512):
@@ -548,10 +582,10 @@ MAKERS = {
     "limestone": limestone,
     "soil": soil,
     "grass": grass_ground,
-    "petal": petal,
     "leaves": leaves,
     "ivy_card": ivy_card,
     "grass_card": grass_card,
+    "tallgrass_card": tallgrass_card,
     "grime_card": grime_card,
     "glass_card": glass_card,
 }

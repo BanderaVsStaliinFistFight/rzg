@@ -167,7 +167,7 @@ local server = run("ThroneRoomServer")
 check(server.RunContext == roblox.Enum.RunContext.Server, "server script runs on the server")
 check(lighting:FindFirstChildOfClass("BloomEffect") ~= nil, "server applied the post effects")
 check(lighting:GetSunDirection():Dot(toward) > 0.97, "server aimed the sun through the window")
-check(fills > 100 and room:GetAttribute("TerrainBuilt") == true, "server grew the terrain grass (" .. fills .. " strips)")
+check(fills > 50 and room:GetAttribute("TerrainBuilt") == true, "server grew the terrain grass (" .. fills .. " strips)")
 
 print("Running ThroneRoomFX")
 room:SetAttribute("MusicId", "1234567890")
@@ -200,7 +200,7 @@ local env2 = environment({ __LUNE = true, __PREVIEW_TEXTURES = ids })
 env2.game, env2.workspace = game2, game2:GetService("Workspace")
 local room2 = luau.load(source, { debugName = "ThroneRoomBuilder", environment = env2 })()
 local variants = game2:GetService("MaterialService"):GetChildren()
-check(#variants == 13, "13 MaterialVariants made (" .. #variants .. ")")
+check(#variants == 12, "12 MaterialVariants made (" .. #variants .. ")")
 local textured, decals, textures = 0, 0, 0
 for _, d in room2:GetDescendants() do
 	if d:IsA("BasePart") and d.MaterialVariant ~= "" then
@@ -211,7 +211,7 @@ for _, d in room2:GetDescendants() do
 		textures += 1
 	end
 end
-check(textured > 10000, "parts use the textured materials (" .. textured .. ")")
+check(textured > 2500, "parts use the textured materials (" .. textured .. ")")
 check(decals > 1000, "ivy and grass cut-outs placed (" .. decals .. " decals)")
 check(textures > 50, "grime and glass textures placed (" .. textures .. ")")
 local wall = room2.Architecture.Walls:FindFirstChildWhichIsA("BasePart")

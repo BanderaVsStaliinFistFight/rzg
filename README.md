@@ -4,9 +4,12 @@ A walk-in recreation of Asgore's throne room, built from Roblox parts, with its 
 PBR textures. With the textures uploaded (see [Textures](#textures); until then it uses
 Roblox's built-in materials), it has:
 
-- **Golden flower bed.** About 2,400 satin-gloss buttercups on leafy mounds, with the
-  bright raised clusters laid out as in the original room. Some are buds and some turn
-  toward the light. A dirt clearing holds the throne.
+- **Golden flower bed.** About 2,100 buttercups, laid out with the bright raised clusters
+  of the original room. Each has five glossy, cupped petals around a ring of stamens and
+  a green centre, on its own stem, and some have a leaf partway up. They vary: some are
+  buds, some turn toward the light, and a few have lost a petal. Low leafy mounds and
+  tall seeding grass grow between them. A dirt clearing holds the throne, with fallen
+  petals on it.
 - **Asgore's throne.** A gilded throne with a reclined, arched back of diamond-buttoned
   purple velvet, pleated between the buttons. Its frame has reeded stiles, urn finials,
   beaded moldings, and a crest with Asgore's crown, gems, scrolls and acanthus leaves.
@@ -21,8 +24,9 @@ Roblox's built-in materials), it has:
 - **Golden walls.** Plaster with pilasters, blind gothic arches, wood wainscot, cornices,
   a beamed plank ceiling and grime in the corners. Real-looking ivy covers the corners,
   hangs from the cornice and grows over the walls by the entrance.
-- **Grass.** Terrain grass on the green floor, with tufts of tall grass along the walls,
-  around the bushes and at the edge of the flower bed.
+- **Grass.** Long terrain grass over the whole floor, flower bed included. Tufts of
+  grass, some dry and some going to seed, grow along the walls, around the bushes, at the
+  edge of the bed and across the open floor.
 - **Doorway and corridor.** A dark doorway toward the barrier, and an entrance corridor
   with limestone slabs and wall lamps where you spawn.
 - **Save point.** It spins and sparkles. Press **E** to save: an Undertale-style text box
@@ -40,6 +44,7 @@ bloom and terrain grass are not Roblox's.
 |---|---|
 | ![Entrance](preview/entrance.jpg) | ![Throne](preview/throne.jpg) |
 | ![Window](preview/window.jpg) | ![Hall](preview/hall.jpg) |
+| ![Buttercups](preview/flowers.jpg) | ![Grass and stray flowers](preview/meadow.jpg) |
 | ![Ivy](preview/ivy.jpg) | ![Corridor](preview/corridor.jpg) |
 | ![Throne close-up](preview/throne-close.jpg) | ![Throne legs and apron](preview/throne-legs.jpg) |
 
@@ -66,8 +71,8 @@ allowed to.
 
 ## Textures
 
-`textures/` holds 13 tileable PBR sets (colour, normal and roughness maps, plus metalness
-for gold) and four cut-outs:
+`textures/` holds 12 tileable PBR sets (colour, normal and roughness maps, plus metalness
+for gold) and five cut-outs:
 
 | Set | Used for |
 |---|---|
@@ -75,8 +80,9 @@ for gold) and four cut-outs:
 | `woodplanks`, `wood` | ceiling and wainscot panels; beams and skirting |
 | `gold`, `velvet`, `linen` | the thrones and the dust sheet |
 | `terracotta`, `limestone`, `soil` | floor tiles; corridor slabs; flower bed and clearing |
-| `grass`, `leaves`, `petal` | green floor; foliage, bushes and ivy mounds; flower petals |
-| `ivy_card`, `grass_card` | ivy sprigs on the walls; tufts of tall grass |
+| `grass`, `leaves` | green floor; foliage, bushes and ivy mounds |
+| `ivy_card` | ivy sprigs on the walls |
+| `grass_card`, `tallgrass_card` | dense tufts of grass; wispy grass going to seed |
 | `grime_card`, `glass_card` | dust above the wainscot and soot under the cornice; streaks in the window glass |
 
 The colour maps are light and nearly neutral, because Roblox tints a MaterialVariant's
@@ -93,7 +99,7 @@ numpy and Pillow).
    python3 tools/upload_textures.py --api-key YOUR_KEY --user-id YOUR_USER_ID
    ```
 
-   It uploads the 44 images and writes their ids into the `TEXTURE_IDS` table at the top
+   It uploads the 42 images and writes their ids into the `TEXTURE_IDS` table at the top
    of `src/ThroneRoomBuilder.luau`. If it stops partway, run it again: it skips what's
    already uploaded.
 3. Paste `src/ThroneRoomBuilder.luau` into Studio's command bar and press Enter.
@@ -118,7 +124,7 @@ The settings are at the top of `src/ThroneRoomBuilder.luau`:
 |---|---|---|
 | `Origin` | `CFrame.new(0, 0, 0)` | Where the room goes. The back wall's inside face is at the origin, and the room runs toward +Z. |
 | `Seed` | `915` | Change it for a different flower and ivy layout. |
-| `FlowerSpacing` | `1.45` | Raise it to `1.8` for about a third fewer flower parts on slower devices. |
+| `FlowerSpacing` | `1.55` | Raise it to `1.9` for about a third fewer flower parts on slower devices. |
 | `ApplyLighting` | `true` | Whether the builder sets Lighting and the post effects. |
 | `MusicId` | `""` | The numeric id of an audio asset you're allowed to use. It's stored as the model's `MusicId` attribute and played on loop. |
 | `TerrainGrass` | `true` | Whether to grow terrain grass on the green floor. |
@@ -128,8 +134,8 @@ effects are its children. Change them there.
 
 **Performance.** Flowers, ivy and other small details are anchored and don't collide,
 take touches or cast shadows. Walls, floors and furniture do. With textures there are
-about 21k parts, since ivy cut-outs replace most of the ivy mounds; without them, about
-26k. The throne is about 580 of them.
+about 24k parts, since ivy cut-outs replace most of the ivy mounds; without them, about
+29k. Most are flowers (about 17k) and the throne is about 580.
 
 ## Rebuild the files
 
